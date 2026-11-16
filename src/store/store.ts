@@ -144,41 +144,51 @@ export const useStore = create<Store>()(
           employeeId: input.employeeId || undefined,
           customer: input.customer?.trim() || undefined,
         }
-        set((s) => ({
-          sales: [...s.sales, sale],
-          products: s.products.map((p) => {
+        set((s) => {
+          // baixa o estoque por produto/tamanho e registra a saída no histórico de movimentações
+          const moves: StockMove[] = []
+          const products = s.products.map((p) => {
             const mine = input.items.filter((i) => i.productId === p.id)
             if (!mine.length) return p
-            return {
-              ...p,
-              sizes: p.sizes.map((sz) => {
-                const q = mine.filter((i) => i.size === sz.size).reduce((a, i) => a + i.qty, 0)
-                return q ? { ...sz, qty: Math.max(0, sz.qty - q) } : sz
-              }),
+            const changes: StockMove['changes'] = []
+            const sizes = p.sizes.map((sz) => {
+              const q = mine.filter((i) => i.size === sz.size).reduce((a, i) => a + i.qty, 0)
+              if (!q) return sz
+              const next = Math.max(0, sz.qty - q)
+              if (next !== sz.qty) changes.push({ size: sz.size, delta: next - sz.qty })
+              return { ...sz, qty: next }
+            })
+            if (changes.length) {
+              moves.push({ id: uid(), ts: sale.ts, productId: p.id, productName: p.name, type: 'saida', changes, note: 'Venda' })
             }
-          }),
-        }))
+            return { ...p, sizes }
+          })
+          return { sales: [...s.sales, sale], products, moves: [...moves, ...s.moves].slice(0, 300) }
+        })
         return sale
       },
       removeSale: (id) =>
         set((s) => {
           const sale = s.sales.find((x) => x.id === id)
           if (!sale) return {}
-          return {
-            sales: s.sales.filter((x) => x.id !== id),
-            // devolve as peças ao estoque
-            products: s.products.map((p) => {
-              const mine = sale.items.filter((i) => i.productId === p.id)
-              if (!mine.length) return p
-              return {
-                ...p,
-                sizes: p.sizes.map((sz) => {
-                  const q = mine.filter((i) => i.size === sz.size).reduce((a, i) => a + i.qty, 0)
-                  return q ? { ...sz, qty: sz.qty + q } : sz
-                }),
-              }
-            }),
-          }
+          const moves: StockMove[] = []
+          // devolve as peças ao estoque
+          const products = s.products.map((p) => {
+            const mine = sale.items.filter((i) => i.productId === p.id)
+            if (!mine.length) return p
+            const changes: StockMove['changes'] = []
+            const sizes = p.sizes.map((sz) => {
+              const q = mine.filter((i) => i.size === sz.size).reduce((a, i) => a + i.qty, 0)
+              if (!q) return sz
+              changes.push({ size: sz.size, delta: q })
+              return { ...sz, qty: sz.qty + q }
+            })
+            if (changes.length) {
+              moves.push({ id: uid(), ts: Date.now(), productId: p.id, productName: p.name, type: 'entrada', changes, note: 'Venda excluída' })
+            }
+            return { ...p, sizes }
+          })
+          return { sales: s.sales.filter((x) => x.id !== id), products, moves: [...moves, ...s.moves].slice(0, 300) }
         }),
 
       moveStock: (productId, type, values, note) =>

@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
-import { ArrowLeft, Bell, Grip, House, Moon, Plus, Settings, Shirt, Sparkles, Sun } from 'lucide-react'
+import {
+  ArrowLeft, Bell, BookImage, ChevronRight, House, LayoutGrid, Moon, PackagePlus, Plus, Settings, Shirt, ShoppingCart, Sparkles, Sun,
+  Trash2, Truck, Zap,
+} from 'lucide-react'
 import { NAV, navFor } from '../nav'
 import { greeting } from '../lib/dates'
-import { code, firstName, normalize } from '../lib/format'
-import { useAlerts, useIsDesktop } from '../hooks'
+import { brl, code, firstName, normalize, plural } from '../lib/format'
+import { useAlerts, useCategoryNames, useIsDesktop } from '../hooks'
 import { useStore } from '../store/store'
 import { useUI } from '../store/ui'
 import { Chat, ChatHeader } from './Chat'
 import { Logo } from './Logo'
+import { ProductThumb } from './ProductThumb'
 import { SaleModal } from './SaleModal'
 import { StockMoveModal } from './StockMoveModal'
 import { Avatar, Button, cn, ConfirmHost, IconButton, Modal, SearchInput, Toasts } from './ui'
@@ -172,17 +176,21 @@ function Sidebar({ alerts }: { alerts: number }) {
 
 /* ───────── Navegação do celular ───────── */
 
+/** Barra flutuante em vidro (referência mobile.png): início · produtos · seções (centro) · Nova IA · ações rápidas */
 function MobileNav() {
   const { pathname } = useLocation()
-  const openSale = useUI((s) => s.openSale)
   const setMenu = useUI((s) => s.setMenu)
+  const setActions = useUI((s) => s.setActions)
   const menuOpen = useUI((s) => s.menuOpen)
+  const actionsOpen = useUI((s) => s.actionsOpen)
+  const sheet = menuOpen || actionsOpen
+  const base = 'grid h-12 w-12 place-items-center rounded-full transition active:scale-95'
   const item = (to: string, label: string, icon: React.ReactNode) => {
-    const active = !menuOpen && (to === '/' ? pathname === '/' : pathname.startsWith(to))
+    const active = !sheet && (to === '/' ? pathname === '/' : pathname.startsWith(to))
     return (
       <Link
         to={to} aria-label={label} aria-current={active ? 'page' : undefined}
-        className={cn('grid h-12 w-12 place-items-center rounded-full transition', active ? 'bg-white text-[#17141f]' : 'bg-white/10 text-white/75')}
+        className={cn(base, active ? 'bg-ink text-surface shadow-md' : 'text-ink-2')}
       >
         {icon}
       </Link>
@@ -193,23 +201,51 @@ function MobileNav() {
       className="no-print fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:hidden"
       aria-label="Navegação principal"
     >
-      <div className="flex items-center gap-2 rounded-full bg-nav p-2 shadow-[0_12px_32px_-8px_rgb(0_0_0/0.45)] ring-1 ring-white/10">
+      <div className="glass-strong flex items-center gap-1.5 rounded-full p-2">
         {item('/', 'Início', <House size={20} />)}
         {item('/produtos', 'Produtos', <Shirt size={20} />)}
-        <button type="button" onClick={openSale} aria-label="Nova venda" className="grid h-12 w-12 place-items-center rounded-full bg-brand text-white">
-          <Plus size={22} strokeWidth={2.4} />
+        <button
+          type="button" onClick={() => setMenu(!menuOpen)} aria-label="Menu de seções" aria-expanded={menuOpen}
+          className={cn(base, 'shadow-md', menuOpen ? 'bg-ink text-surface' : 'bg-brand text-white')}
+        >
+          <LayoutGrid size={21} />
         </button>
         {item('/ia', 'Nova IA', <Sparkles size={20} />)}
         <button
-          type="button" onClick={() => setMenu(true)} aria-label="Todas as seções"
-          className={cn('grid h-12 w-12 place-items-center rounded-full transition', menuOpen ? 'bg-white text-[#17141f]' : 'bg-white/10 text-white/75')}
+          type="button" onClick={() => setActions(!actionsOpen)} aria-label="Ações rápidas" aria-expanded={actionsOpen}
+          className={cn(base, actionsOpen ? 'bg-ink text-surface shadow-md' : 'text-ink-2')}
         >
-          <Grip size={20} />
+          <Zap size={20} />
         </button>
       </div>
     </nav>
   )
 }
+
+/** Linha-cartão com seta em círculo escuro (referência mobile.png) */
+function RowCard({ icon, title, text, onClick, badge }: { icon: React.ReactNode; title: string; text?: string; onClick: () => void; badge?: number }) {
+  return (
+    <button
+      type="button" onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-[22px] bg-surface p-2.5 text-left shadow-card transition active:scale-[0.99]"
+    >
+      <span className="key-tile relative h-12 w-12 shrink-0 text-brand">
+        {icon}
+        {!!badge && (
+          <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-bad px-1 text-[11px] font-bold text-white">{badge}</span>
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-semibold text-ink">{title}</span>
+        {text && <span className="block truncate text-xs text-ink-3">{text}</span>}
+      </span>
+      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink text-surface"><ChevronRight size={16} /></span>
+    </button>
+  )
+}
+
+/** Botão do centro: as seções do app */
+const SECTION_ORDER = ['/gestao', '/financeiro', '/relatorios', '/estoque', '/avisos', '/catalogo', '/fornecedores', '/equipe']
 
 function MenuSheet({ alerts }: { alerts: number }) {
   const open = useUI((s) => s.menuOpen)
@@ -219,24 +255,120 @@ function MenuSheet({ alerts }: { alerts: number }) {
     setMenu(false)
     navigate(to)
   }
+  const sections = SECTION_ORDER.flatMap((to) => NAV.find((n) => n.to === to) ?? [])
   return (
-    <Modal open={open} onClose={() => setMenu(false)} title="Todas as seções">
-      <div className="grid grid-cols-3 gap-2.5">
-        {NAV.map((n) => (
-          <button key={n.to} type="button" onClick={() => go(n.to)} className="relative flex flex-col items-center gap-2 rounded-2xl bg-surface-2 px-2 py-4 text-center">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-brand"><n.icon size={19} /></span>
-            <span className="text-xs font-semibold text-ink">{n.label}</span>
+    <Modal open={open} onClose={() => setMenu(false)} title="Seções" subtitle="Para onde você quer ir?">
+      <div className="grid grid-cols-2 gap-2.5">
+        {sections.map((n) => (
+          <button
+            key={n.to} type="button" onClick={() => go(n.to)}
+            className="relative flex flex-col items-start gap-3 rounded-[22px] bg-surface-2 p-3.5 text-left transition active:scale-[0.98]"
+          >
+            <span className="key-tile h-12 w-12 text-brand"><n.icon size={20} /></span>
+            <span className="text-[14px] font-semibold leading-tight text-ink">{n.label}</span>
             {n.to === '/avisos' && alerts > 0 && (
               <span className="absolute right-3 top-3 grid h-5 min-w-5 place-items-center rounded-full bg-bad px-1.5 text-[11px] font-bold text-white">{alerts}</span>
             )}
           </button>
         ))}
-        <button type="button" onClick={() => go('/ajustes')} className="flex flex-col items-center gap-2 rounded-2xl bg-surface-2 px-2 py-4 text-center">
-          <span className="grid h-10 w-10 place-items-center rounded-full bg-surface text-ink-2"><Settings size={19} /></span>
-          <span className="text-xs font-semibold text-ink">Ajustes</span>
-        </button>
       </div>
     </Modal>
+  )
+}
+
+/** Último botão: ações rápidas (antes, "todas as seções") */
+function ActionsSheet() {
+  const open = useUI((s) => s.actionsOpen)
+  const setActions = useUI((s) => s.setActions)
+  const openSale = useUI((s) => s.openSale)
+  const openStockMove = useUI((s) => s.openStockMove)
+  const cartPieces = useUI((s) => s.cart.reduce((a, i) => a + i.qty, 0))
+  const navigate = useNavigate()
+  const go = (to: string) => {
+    setActions(false)
+    navigate(to)
+  }
+  return (
+    <Modal open={open} onClose={() => setActions(false)} title="Ações rápidas" subtitle="O que você quer fazer agora?">
+      <div className="space-y-2.5">
+        <RowCard icon={<Plus size={20} />} title="Nova venda" text={cartPieces ? `${plural(cartPieces, 'peça', 'peças')} no carrinho` : 'Escolha as peças e registre'} onClick={openSale} />
+        <RowCard icon={<Shirt size={19} />} title="Novo produto" text="Cadastre com fotos, tamanhos e preço" onClick={() => go('/produtos?novo=1')} />
+        <RowCard icon={<PackagePlus size={19} />} title="Entrada de estoque" text="Chegou mercadoria? Dê entrada" onClick={() => openStockMove()} />
+        <RowCard icon={<BookImage size={19} />} title="Enviar catálogo" text="Catálogos e peças avulsas para o cliente" onClick={() => go('/catalogo')} />
+        <RowCard icon={<Truck size={19} />} title="Novo fornecedor" text="Salve contato e preço médio por peça" onClick={() => go('/fornecedores?novo=1')} />
+        <RowCard icon={<Settings size={19} />} title="Ajustes" text="Loja, aparência e seus dados" onClick={() => go('/ajustes')} />
+      </div>
+    </Modal>
+  )
+}
+
+/** Escolha de tamanho ao tocar no carrinho de um produto com vários tamanhos */
+function CartPicker() {
+  const id = useUI((s) => s.cartPicker)
+  const close = useUI((s) => s.closeCartPicker)
+  const addToCart = useUI((s) => s.addToCart)
+  const cart = useUI((s) => s.cart)
+  const product = useStore((s) => s.products.find((p) => p.id === id))
+  const catNames = useCategoryNames()
+  if (!product) return <Modal open={false} onClose={close} title="">{null}</Modal>
+  return (
+    <Modal open onClose={close} size="sm" title="Qual tamanho?" subtitle="Toque quantas vezes precisar. Depois é só finalizar a venda.">
+      <div className="flex items-center gap-3 rounded-2xl bg-surface-2 p-2.5">
+        <ProductThumb product={product} categoryName={catNames.get(product.categoryId)} className="h-14 w-14 shrink-0 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[14px] font-semibold text-ink">{product.name}</div>
+          <div className="text-xs text-ink-3">{code(product.code)}</div>
+        </div>
+        <div className="text-[15px] font-semibold tabular-nums text-ink">{brl(product.price)}</div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {product.sizes.map((s) => {
+          const inCart = cart.find((i) => i.productId === product.id && i.size === s.size)?.qty ?? 0
+          const left = s.qty - inCart
+          return (
+            <button
+              key={s.size} type="button" disabled={left <= 0} onClick={() => addToCart(product.id, s.size)}
+              className={cn(
+                'flex h-12 min-w-16 flex-col items-center justify-center rounded-2xl border px-3 text-[14px] font-semibold leading-none transition active:scale-95 disabled:opacity-35',
+                inCart > 0 ? 'border-brand bg-brand text-white' : 'border-line bg-surface text-ink hover:border-brand',
+              )}
+            >
+              {s.size}
+              <span className={cn('mt-1 text-[10px] font-medium', inCart > 0 ? 'text-white/80' : 'text-ink-3')}>
+                {inCart > 0 ? `${inCart} no carrinho` : `${s.qty} em estoque`}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <Button variant="brand" full className="mt-5" onClick={close}>Pronto</Button>
+    </Modal>
+  )
+}
+
+/** Pílula em vidro com o carrinho em andamento: dá para continuar navegando e finalizar depois */
+function CartBar() {
+  const cart = useUI((s) => s.cart)
+  const saleOpen = useUI((s) => s.saleOpen)
+  const openSale = useUI((s) => s.openSale)
+  const clearCart = useUI((s) => s.clearCart)
+  const pieces = cart.reduce((a, i) => a + i.qty, 0)
+  const total = cart.reduce((a, i) => a + i.qty * i.price, 0)
+  if (!pieces || saleOpen) return null
+  return (
+    <div className="no-print fixed inset-x-0 bottom-[5.25rem] z-30 flex justify-center px-4 lg:bottom-6 lg:left-[248px]">
+      <div className="glass-strong flex animate-rise items-center gap-2 rounded-full py-1.5 pl-4 pr-1.5">
+        <ShoppingCart size={17} className="text-brand" />
+        <span className="text-[13px] font-semibold text-ink">{plural(pieces, 'peça', 'peças')}</span>
+        <span className="text-[13px] tabular-nums text-ink-2">· {brl(total)}</span>
+        <button type="button" onClick={clearCart} aria-label="Esvaziar carrinho" className="grid h-8 w-8 place-items-center rounded-full text-ink-3 hover:bg-surface-2 hover:text-bad-ink">
+          <Trash2 size={15} />
+        </button>
+        <button type="button" onClick={openSale} className="h-10 rounded-full bg-ink px-4 text-[13px] font-semibold text-surface">
+          Finalizar venda
+        </button>
+      </div>
+    </div>
   )
 }
 
@@ -294,7 +426,8 @@ export function Shell() {
   const openAI = () => (desktop && pathname !== '/ia' ? setAI(true) : navigate('/ia'))
 
   return (
-    <div className="min-h-dvh bg-bg text-ink">
+    <div className="min-h-dvh text-ink">
+      <div className="app-backdrop" aria-hidden />
       <Sidebar alerts={alerts} />
 
       <div className="lg:pl-[248px]">
@@ -318,7 +451,7 @@ export function Shell() {
 
         {/* Cabeçalho das telas internas no celular (a Início tem o seu próprio) */}
         {!home && (
-          <header className="no-print sticky top-0 z-20 flex items-center gap-3 bg-bg/90 px-4 py-3 backdrop-blur lg:hidden">
+          <header className="no-print sticky top-0 z-20 flex items-center gap-3 border-b border-[var(--glass-line)] bg-[var(--glass)] px-4 py-3 backdrop-blur-xl backdrop-saturate-150 lg:hidden">
             <IconButton label="Voltar ao início" variant="outline" onClick={() => navigate(pathname.startsWith('/catalogo/') ? '/catalogo' : '/')}>
               <ArrowLeft size={18} />
             </IconButton>
@@ -336,6 +469,9 @@ export function Shell() {
 
       <MobileNav />
       <MenuSheet alerts={alerts} />
+      <ActionsSheet />
+      <CartBar />
+      <CartPicker />
       <AIDrawer />
       <SaleModal />
       <StockMoveModal />

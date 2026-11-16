@@ -1,17 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { ArrowLeft, BookImage, Check, Copy, MessageCircle, Pencil, Plus, Printer, Send, Share2, Trash2 } from 'lucide-react'
+import { ArrowLeft, BookImage, Check, ChevronRight, Copy, MessageCircle, Pencil, Plus, Printer, Send, Share2, Trash2 } from 'lucide-react'
 import type { Catalog, Product, Settings } from '../types'
 import { stockOf } from '../lib/analytics'
 import { fmtDate } from '../lib/dates'
-import { brl, plural, whatsappLink } from '../lib/format'
+import { brl, normalize, plural, whatsappLink } from '../lib/format'
 import { copyText, dataUrlToFile } from '../lib/image'
 import { useCategoryNames } from '../hooks'
 import { useStore } from '../store/store'
 import { toast, useUI } from '../store/ui'
+import { Folder } from '../components/Folder'
 import { ProductThumb } from '../components/ProductThumb'
 import {
-  Button, Card, Chip, cn, Empty, Field, IconButton, Input, Modal, Textarea, Toggle,
+  Button, Card, Chip, cn, Empty, Field, IconButton, Input, Modal, SearchInput, Textarea, Toggle,
 } from '../components/ui'
 
 type Draft = Omit<Catalog, 'id' | 'createdAt'> & { id?: string }
@@ -40,6 +41,7 @@ export function Catalogo() {
   const catNames = useCategoryNames()
   const [draft, setDraft] = useState<Draft | null>(null)
   const [sharing, setSharing] = useState<Catalog | null>(null)
+  const [picking, setPicking] = useState(false)
 
   const blank = (): Draft => ({
     name: '', message: 'Oi! Separei algumas peças que acho que você vai gostar. Qualquer uma, é só me chamar.', productIds: [], showPrices: true,
@@ -51,8 +53,26 @@ export function Catalogo() {
         <p className="max-w-xl text-[13px] text-ink-2">
           Monte uma seleção de produtos e envie ao cliente pelo WhatsApp, com fotos, preços e os tamanhos disponíveis no estoque.
         </p>
-        <Button icon={<Plus size={16} />} onClick={() => setDraft(blank())} disabled={!products.length}>Novo catálogo</Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" icon={<Send size={16} />} onClick={() => setPicking(true)} disabled={!products.length}>Enviar produtos avulsos</Button>
+          <Button icon={<Plus size={16} />} onClick={() => setDraft(blank())} disabled={!products.length}>Novo catálogo</Button>
+        </div>
       </div>
+
+      {/* Atalho: escolher peças direto da lista de produtos e enviar, sem montar um catálogo */}
+      {products.length > 0 && (
+        <button
+          type="button" onClick={() => setPicking(true)}
+          className="glass flex w-full items-center gap-3 rounded-[24px] p-3 text-left transition active:scale-[0.99]"
+        >
+          <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-brand text-white"><Send size={18} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[14px] font-semibold text-ink">Enviar peças separadas</span>
+            <span className="block truncate text-xs text-ink-2">Escolha produtos da aba Produtos e mande fotos, preços e tamanhos pelo WhatsApp.</span>
+          </span>
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-ink text-surface"><ChevronRight size={16} /></span>
+        </button>
+      )}
 
       {catalogs.length === 0 ? (
         <Card>
@@ -64,20 +84,30 @@ export function Catalogo() {
         </Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-          {catalogs.map((c) => {
+          {catalogs.map((c, n) => {
             const items = productsOf(c, products)
+            const hasPhotos = items.slice(0, 4).some((p) => p.photos.length > 0)
             return (
-              <Card key={c.id} className="flex flex-col p-0">
-                <Link to={`/catalogo/${c.id}`} className="grid grid-cols-4 gap-0.5 overflow-hidden rounded-t-3xl" aria-label={`Abrir catálogo ${c.name}`}>
-                  {Array.from({ length: 4 }, (_, i) => items[i]).map((p, i) =>
-                    p ? (
-                      <ProductThumb key={p.id} product={p} categoryName={catNames.get(p.categoryId)} className="aspect-[4/5] w-full" />
-                    ) : (
-                      <span key={i} className="aspect-[4/5] bg-surface-2" />
-                    ),
-                  )}
-                </Link>
-                <div className="flex flex-1 flex-col p-5">
+              <Folder
+                key={c.id} tab={36} tabShare={0.45}
+                tone={(['brand', 'ocean', 'sunset', 'mint'] as const)[n % 4]}
+                backdrop={
+                  // com fotos: elas aparecem na aba e, desfocadas, através do vidro. Sem fotos: malha de cores.
+                  hasPhotos ? (
+                    <div className="grid h-full grid-cols-4">
+                      {Array.from({ length: 4 }, (_, i) => items[i]).map((p, i) =>
+                        p ? (
+                          <ProductThumb key={p.id} product={p} categoryName={catNames.get(p.categoryId)} className="h-full w-full" />
+                        ) : (
+                          <span key={i} className="bg-surface-3" />
+                        ),
+                      )}
+                    </div>
+                  ) : undefined
+                }
+                bodyClassName="flex min-h-[210px] flex-col"
+              >
+                <div className="flex flex-1 flex-col p-5 pt-0">
                   <h3 className="truncate text-base font-semibold text-ink">{c.name}</h3>
                   <p className="mt-0.5 text-xs text-ink-3">{plural(items.length, 'produto', 'produtos')} · criado em {fmtDate(c.createdAt)}</p>
                   {c.message && <p className="mt-2 line-clamp-2 text-[13px] text-ink-2">{c.message}</p>}
@@ -101,7 +131,7 @@ export function Catalogo() {
                     </IconButton>
                   </div>
                 </div>
-              </Card>
+              </Folder>
             )
           })}
         </div>
@@ -109,7 +139,79 @@ export function Catalogo() {
 
       <CatalogEditor draft={draft} onClose={() => setDraft(null)} />
       <ShareModal catalog={sharing} onClose={() => setSharing(null)} />
+      <PickProducts
+        open={picking} onClose={() => setPicking(false)}
+        onSend={(ids) => {
+          setPicking(false)
+          setSharing({ id: 'avulso', name: 'Peças selecionadas', message: 'Oi! Separei estas peças para você. Qualquer uma, é só me chamar.', productIds: ids, showPrices: true, createdAt: Date.now() })
+        }}
+      />
     </div>
+  )
+}
+
+/* ───────── Escolher produtos avulsos para enviar ───────── */
+
+function PickProducts({ open, onClose, onSend }: { open: boolean; onClose: () => void; onSend: (ids: string[]) => void }) {
+  const products = useStore((s) => s.products)
+  const categories = useStore((s) => s.categories)
+  const catNames = useCategoryNames()
+  const [query, setQuery] = useState('')
+  const [cat, setCat] = useState('todas')
+  const [ids, setIds] = useState<string[]>([])
+  useEffect(() => {
+    if (!open) return
+    setQuery('')
+    setCat('todas')
+    setIds([])
+  }, [open])
+
+  const visible = useMemo(() => {
+    const n = normalize(query.trim())
+    return products
+      .filter((p) => (cat === 'todas' || p.categoryId === cat) && (!n || normalize(`${p.name} ${p.brand}`).includes(n)))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [products, query, cat])
+  const toggle = (id: string) => setIds((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]))
+
+  return (
+    <Modal
+      open={open} onClose={onClose} size="lg" title="Enviar produtos avulsos" subtitle="Toque nas peças que você quer mandar ao cliente."
+      footer={
+        <>
+          <span className="mr-auto text-[13px] text-ink-2">{plural(ids.length, 'produto selecionado', 'produtos selecionados')}</span>
+          <Button variant="soft" onClick={onClose}>Cancelar</Button>
+          <Button variant="brand" disabled={!ids.length} icon={<Send size={15} />} onClick={() => onSend(ids)}>Continuar</Button>
+        </>
+      }
+    >
+      <SearchInput value={query} onChange={setQuery} placeholder="Buscar por nome ou marca" className="[&>input]:bg-surface-2 [&>input]:shadow-none" />
+      <div className="no-scrollbar my-3 flex gap-2 overflow-x-auto">
+        <Chip active={cat === 'todas'} onClick={() => setCat('todas')}>Todas</Chip>
+        {categories.map((c) => <Chip key={c.id} active={cat === c.id} onClick={() => setCat(c.id)}>{c.name}</Chip>)}
+      </div>
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5">
+        {visible.map((p) => {
+          const on = ids.includes(p.id)
+          return (
+            <button
+              key={p.id} type="button" onClick={() => toggle(p.id)} aria-pressed={on}
+              className={cn('relative overflow-hidden rounded-2xl text-left ring-2 transition active:scale-[0.97]', on ? 'ring-brand' : 'ring-transparent')}
+            >
+              <ProductThumb product={p} categoryName={catNames.get(p.categoryId)} className={cn('aspect-[4/5] w-full', stockOf(p) === 0 && 'opacity-50')} />
+              <span className={cn('absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-full border-2', on ? 'border-brand bg-brand text-white' : 'border-white bg-black/25 text-transparent')}>
+                <Check size={13} strokeWidth={3} />
+              </span>
+              <span className="block bg-surface-2 px-2 py-1.5">
+                <span className="block truncate text-[11px] font-semibold text-ink">{p.name}</span>
+                <span className="block text-[11px] text-ink-3">{stockOf(p) === 0 ? 'Esgotado' : brl(p.price)}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {visible.length === 0 && <p className="py-8 text-center text-[13px] text-ink-3">Nenhum produto encontrado.</p>}
+    </Modal>
   )
 }
 

@@ -1,17 +1,20 @@
 import { useMemo, useState } from 'react'
-import { ArrowDownToLine, ArrowUpFromLine, CircleCheck, ClipboardCheck, Package, PackagePlus } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import {
+  ArrowDownToLine, ArrowUpFromLine, BellRing, Boxes, CircleCheck, ClipboardCheck, Package, PackagePlus, TriangleAlert,
+} from 'lucide-react'
 import type { MoveType } from '../types'
-import { stockOf, stockTotals } from '../lib/analytics'
+import { stockByCategory, stockOf, stockTotals } from '../lib/analytics'
 import { fmtDateTime } from '../lib/dates'
-import { brl0, code, normalize, num, plural } from '../lib/format'
+import { brl, brl0, code, normalize, num, plural } from '../lib/format'
 import { useAlerts, useCategoryNames } from '../hooks'
 import { useStore } from '../store/store'
 import { useUI } from '../store/ui'
 import { AlertBadge } from '../components/AlertBadge'
+import { GroupedColumns } from '../components/charts'
+import { Folder } from '../components/Folder'
 import { ProductThumb } from '../components/ProductThumb'
-import { Badge, Button, Card, CardHead, cn, Empty, IconButton, SearchInput, Segmented, Select, StatTile } from '../components/ui'
-
-type Filter = 'todos' | 'alerta' | 'emdia'
+import { Badge, Button, Card, CardHead, Chip, cn, Empty, IconButton, SearchInput, StatTile } from '../components/ui'
 
 const MOVE: Record<MoveType, { label: string; icon: React.ReactNode }> = {
   entrada: { label: 'Entrada', icon: <ArrowDownToLine size={16} /> },
@@ -46,41 +49,73 @@ export function Estoque() {
   const alerts = useAlerts()
   const [query, setQuery] = useState('')
   const [cat, setCat] = useState('')
-  const [filter, setFilter] = useState<Filter>('todos')
+  const navigate = useNavigate()
 
   const totals = useMemo(() => stockTotals(products), [products])
+  const stockCats = useMemo(() => stockByCategory(products, categories), [products, categories])
   const alertBy = useMemo(() => new Map(alerts.map((a) => [a.product.id, a])), [alerts])
 
   const list = useMemo(() => {
     const n = normalize(query.trim())
     return products
       .filter((p) => (!cat || p.categoryId === cat) && (!n || normalize(`${p.name} ${p.brand} ${code(p.code)}`).includes(n)))
-      .filter((p) => (filter === 'todos' ? true : filter === 'alerta' ? alertBy.has(p.id) : !alertBy.has(p.id)))
       .sort((a, b) => Number(alertBy.has(b.id)) - Number(alertBy.has(a.id)) || stockOf(a) - stockOf(b))
-  }, [products, query, cat, filter, alertBy])
+  }, [products, query, cat, alertBy])
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile label="Peças em estoque" value={num(totals.pieces)} unit="peças" />
         <StatTile label="Produtos" value={num(totals.count)} hint={`${num(products.reduce((a, p) => a + p.sizes.length, 0))} tamanhos cadastrados`} />
         <StatTile label="Valor a custo" value={brl0(totals.cost)} hint="Quanto você investiu" />
         <StatTile label="Valor de venda" value={brl0(totals.retail)} hint={`Lucro potencial de ${brl0(totals.potential)}`} />
-        <StatTile label="Em alerta" value={num(alerts.length)} unit={alerts.length === 1 ? 'produto' : 'produtos'} hint="Abaixo do mínimo ou com tamanho em falta" className="col-span-2 md:col-span-1" />
       </div>
+
+      {/* Quanto está investido contra quanto o estoque pode render, por categoria */}
+      <Card raised>
+        <CardHead
+          icon={<Boxes size={18} />} title="Valor do estoque × previsão de venda"
+          subtitle="Por categoria: o que você investiu (a custo) e o que entra se tudo for vendido"
+          right={totals.retail > 0 && <Badge tone="good">+{brl0(totals.potential)} de lucro potencial</Badge>}
+        />
+        <div className="mt-4">
+          {stockCats.length === 0 ? (
+            <p className="py-10 text-center text-sm text-ink-3">Cadastre produtos para comparar o valor do estoque.</p>
+          ) : (
+            <GroupedColumns
+              data={stockCats.map((s) => ({ label: s.name, a: s.cost, b: s.retail, full: `${s.name} · ${plural(s.pieces, 'peça', 'peças')}` }))}
+              names={['Valor do estoque (custo)', 'Previsão de venda']} format={brl} height={260}
+            />
+          )}
+        </div>
+      </Card>
+
+      {/* Alerta com atalho para a reposição */}
+      <Folder tone={alerts.length ? 'sunset' : 'mint'} tab={26} bodyClassName="flex flex-wrap items-center gap-4 p-5">
+        <span className={cn('grid h-12 w-12 shrink-0 place-items-center rounded-full', alerts.length ? 'bg-warn-soft text-warn-ink' : 'bg-good-soft text-good-ink')}>
+          {alerts.length ? <TriangleAlert size={22} /> : <CircleCheck size={22} />}
+        </span>
+        <div className="min-w-0 flex-1 basis-56">
+          <div className="text-[13px] font-semibold text-ink">Em alerta</div>
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-[28px] font-semibold leading-tight tracking-tight text-ink">{num(alerts.length)}</span>
+            <span className="text-xs text-ink-3">{alerts.length === 1 ? 'produto' : 'produtos'}</span>
+          </div>
+          <p className="text-xs text-ink-3">{alerts.length ? 'Abaixo do mínimo ou com tamanho em falta.' : 'Nada abaixo do mínimo no momento.'}</p>
+        </div>
+        <Button variant={alerts.length ? 'brand' : 'outline'} icon={<BellRing size={16} />} onClick={() => navigate('/avisos')}>
+          {alerts.length ? 'Ir para a reposição' : 'Ver reposição'}
+        </Button>
+      </Folder>
 
       <div className="flex flex-wrap items-center gap-3">
         <SearchInput value={query} onChange={setQuery} placeholder="Buscar produto" className="min-w-[180px] flex-1 sm:max-w-xs" />
-        <Select value={cat} onChange={(e) => setCat(e.target.value)} className="w-56 [&>select]:rounded-full [&>select]:border-transparent [&>select]:shadow-card" aria-label="Categoria">
-          <option value="">Todas as categorias</option>
-          {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-        </Select>
-        <Segmented
-          label="Situação" value={filter} onChange={setFilter}
-          options={[{ value: 'todos', label: 'Todos' }, { value: 'alerta', label: 'Em alerta' }, { value: 'emdia', label: 'Em dia' }]}
-        />
         <span className="flex-1" />
         <Button icon={<PackagePlus size={16} />} onClick={() => openStockMove()} disabled={!products.length}>Movimentar</Button>
+      </div>
+      <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 lg:mx-0 lg:flex-wrap lg:px-0">
+        <Chip active={!cat} onClick={() => setCat('')}>Todas</Chip>
+        {categories.map((c) => <Chip key={c.id} active={cat === c.id} onClick={() => setCat(c.id)}>{c.name}</Chip>)}
       </div>
 
       <div className="grid gap-4 xl:grid-cols-12">

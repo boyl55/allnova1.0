@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { BadgeCheck, Clock, Crown, Lock, Mail, MessageCircle, Pencil, Phone, Plus, Star, Trash2, Truck, X } from 'lucide-react'
 import type { Quote, Supplier } from '../types'
 import { brl, brl0, normalize, pct, plural, whatsappLink } from '../lib/format'
@@ -27,9 +28,19 @@ export function Fornecedores() {
   const [draft, setDraft] = useState<Draft | null>(null)
   const [unlock, setUnlock] = useState(false)
 
+  const [params, setParams] = useSearchParams()
+
   const mine = suppliers.filter((s) => s.kind === 'meu')
   const vips = suppliers.filter((s) => s.kind === 'vip')
-  const blank = (): Draft => ({ kind: 'meu', name: '', contact: '', phone: '', email: '', city: '', minOrder: 0, leadDays: 7, rating: 4, notes: '', quotes: [] })
+  const blank = (): Draft => ({ kind: 'meu', name: '', contact: '', phone: '', city: '', minOrder: 0, leadDays: 7, rating: 4, quotes: [] })
+
+  // /fornecedores?novo=1 (vem do menu de ações rápidas) já abre o cadastro
+  useEffect(() => {
+    if (!params.get('novo')) return
+    setTab('meus')
+    setDraft(blank())
+    setParams({}, { replace: true })
+  }, [params]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="space-y-4">
@@ -299,13 +310,19 @@ function SupplierForm({ draft, onClose }: { draft: Draft | null; onClose: () => 
   if (!f) return null
 
   const set = (patch: Partial<Draft>) => setF({ ...f, ...patch })
-  const setQuote = (i: number, patch: Partial<Quote>) => set({ quotes: f.quotes.map((q, k) => (k === i ? { ...q, ...patch } : q)) })
-  const options = [...new Set([...categories.map((c) => c.name), ...f.quotes.map((q) => q.item).filter(Boolean)])]
+  const priceOf = (item: string) => f.quotes.find((q) => q.item === item)?.price
+  const has = (item: string) => f.quotes.some((q) => q.item === item)
+  const toggle = (item: string) => set({ quotes: has(item) ? f.quotes.filter((q) => q.item !== item) : [...f.quotes, { item, price: 0 }] })
+  const setPrice = (item: string, price: number) => set({ quotes: f.quotes.map((q) => (q.item === item ? { ...q, price } : q)) })
+  // categorias da loja + qualquer preço antigo cujo item não seja uma categoria atual
+  const items = [...new Set([...categories.map((c) => c.name), ...f.quotes.map((q) => q.item).filter(Boolean)])]
+  const filled = f.quotes.filter((q) => q.price > 0).length
   const valid = f.name.trim() && f.phone.trim()
 
   return (
     <Modal
       open onClose={onClose} title={f.id ? 'Editar fornecedor' : 'Novo fornecedor'}
+      subtitle={f.id ? undefined : 'Só o essencial. O resto você completa quando quiser.'}
       footer={
         <>
           {f.id && (
@@ -328,8 +345,7 @@ function SupplierForm({ draft, onClose }: { draft: Draft | null; onClose: () => 
             variant="brand" disabled={!valid}
             onClick={() => {
               saveSupplier({
-                ...f, name: f.name.trim(), contact: f.contact.trim() || f.name.trim(), email: f.email?.trim() || undefined,
-                notes: f.notes?.trim() || undefined, rating: Math.min(5, Math.max(1, f.rating || 1)),
+                ...f, name: f.name.trim(), contact: f.contact.trim() || f.name.trim(), city: f.city.trim(),
                 quotes: f.quotes.filter((q) => q.item && q.price > 0),
               })
               toast(f.id ? 'Fornecedor atualizado' : 'Fornecedor adicionado')
@@ -341,38 +357,57 @@ function SupplierForm({ draft, onClose }: { draft: Draft | null; onClose: () => 
         </>
       }
     >
-      <div className="space-y-4">
+      <div className="space-y-5">
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Nome da empresa"><Input value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="Ex.: Confecções Aurora" /></Field>
-          <Field label="Pessoa de contato"><Input value={f.contact} onChange={(e) => set({ contact: e.target.value })} placeholder="Nome" /></Field>
-          <Field label="WhatsApp / telefone"><Input value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="(11) 90000-0000" inputMode="tel" /></Field>
-          <Field label="E-mail (opcional)"><Input type="email" value={f.email ?? ''} onChange={(e) => set({ email: e.target.value })} placeholder="contato@empresa.com" /></Field>
-          <Field label="Cidade"><Input value={f.city} onChange={(e) => set({ city: e.target.value })} placeholder="Cidade, UF" /></Field>
-          <Field label="Sua nota (1 a 5)"><NumInput value={f.rating} onChange={(rating) => set({ rating })} placeholder="4,5" /></Field>
-          <Field label="Pedido mínimo"><NumInput value={f.minOrder} onChange={(minOrder) => set({ minOrder })} prefix="R$" placeholder="0,00" /></Field>
-          <Field label="Prazo de entrega"><NumInput integer value={f.leadDays} onChange={(leadDays) => set({ leadDays })} suffix="dias" placeholder="0" /></Field>
+          <Field label="Nome do fornecedor"><Input value={f.name} onChange={(e) => set({ name: e.target.value })} placeholder="Ex.: Confecções Aurora" autoFocus /></Field>
+          <Field label="WhatsApp"><Input value={f.phone} onChange={(e) => set({ phone: e.target.value })} placeholder="(11) 90000-0000" inputMode="tel" /></Field>
         </div>
 
         <div>
-          <span className="mb-1.5 block text-[13px] font-medium text-ink-2">Preço médio por peça, por categoria</span>
-          <div className="space-y-2">
-            {f.quotes.map((q, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <Select value={q.item} onChange={(e) => setQuote(i, { item: e.target.value })} className="flex-1" aria-label="Categoria">
-                  <option value="">Categoria</option>
-                  {options.map((o) => <option key={o} value={o} disabled={o !== q.item && f.quotes.some((x) => x.item === o)}>{o}</option>)}
-                </Select>
-                <span className="w-36"><NumInput value={q.price} onChange={(price) => setQuote(i, { price })} prefix="R$" placeholder="0,00" aria-label="Preço por peça" /></span>
-                <IconButton label="Remover preço" variant="ghost" size="sm" onClick={() => set({ quotes: f.quotes.filter((_, k) => k !== i) })}><X size={15} /></IconButton>
-              </div>
-            ))}
+          <div className="mb-2 flex items-baseline justify-between gap-3">
+            <span className="text-[13px] font-medium text-ink-2">Preço médio por peça</span>
+            <span className="text-xs text-ink-3">{filled ? `${filled} ${filled === 1 ? 'categoria' : 'categorias'} com preço` : 'Toque nas categorias que ele vende'}</span>
           </div>
-          <Button variant="soft" size="sm" className="mt-2" icon={<Plus size={14} />} onClick={() => set({ quotes: [...f.quotes, { item: '', price: 0 }] })}>Adicionar preço</Button>
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {items.map((item) => {
+              const on = has(item)
+              return (
+                <div
+                  key={item}
+                  className={cn(
+                    'relative rounded-[20px] border p-3 transition',
+                    on ? 'border-brand bg-brand-soft' : 'border-dashed border-line bg-surface hover:bg-surface-2',
+                  )}
+                >
+                  {on ? (
+                    <>
+                      <div className="flex items-start justify-between gap-1">
+                        <span className="truncate text-[13px] font-semibold text-ink">{item}</span>
+                        <button type="button" onClick={() => toggle(item)} aria-label={`Remover preço de ${item}`} className="-mr-1 -mt-1 grid h-6 w-6 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-surface hover:text-bad-ink">
+                          <X size={14} />
+                        </button>
+                      </div>
+                      <div className="mt-2">
+                        <NumInput value={priceOf(item) ?? 0} onChange={(v) => setPrice(item, v)} prefix="R$" placeholder="0,00" aria-label={`Preço médio por peça de ${item}`} className="!h-10" />
+                      </div>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => toggle(item)} className="flex h-full min-h-[72px] w-full flex-col items-start justify-between gap-2 text-left">
+                      <span className="text-[13px] font-semibold text-ink">{item}</span>
+                      <span className="inline-flex items-center gap-1 text-xs text-ink-3"><Plus size={13} /> Informar preço</span>
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
 
-        <Field label="Observações (opcional)">
-          <Textarea value={f.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} placeholder="Condições de pagamento, grade mínima, dias de atendimento…" />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Cidade (opcional)"><Input value={f.city} onChange={(e) => set({ city: e.target.value })} placeholder="Cidade, UF" /></Field>
+          <Field label="Pedido mínimo"><NumInput value={f.minOrder} onChange={(minOrder) => set({ minOrder })} prefix="R$" placeholder="0,00" /></Field>
+          <Field label="Prazo de entrega"><NumInput integer value={f.leadDays} onChange={(leadDays) => set({ leadDays })} suffix="dias" placeholder="0" /></Field>
+        </div>
       </div>
     </Modal>
   )

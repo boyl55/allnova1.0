@@ -6,7 +6,7 @@ import {
 import { createPortal } from 'react-dom'
 import clsx, { type ClassValue } from 'clsx'
 import {
-  ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Minus, Search, X,
+  ArrowDownRight, ArrowUpRight, Check, ChevronDown, ChevronLeft, ChevronRight, CircleAlert, Minus, Search, Sparkles, X,
 } from 'lucide-react'
 import { initials, signedPct } from '../lib/format'
 import { useUI } from '../store/ui'
@@ -15,9 +15,10 @@ export const cn = (...v: ClassValue[]) => clsx(v)
 
 /* ───────── Superfícies ───────── */
 
-export function Card({ className, children, ...rest }: HTMLAttributes<HTMLDivElement>) {
+/** `raised`: acabamento em relevo (tecla) para os cartões de maior importância da seção */
+export function Card({ className, children, raised, ...rest }: HTMLAttributes<HTMLDivElement> & { raised?: boolean }) {
   return (
-    <div className={cn('print-flat min-w-0 rounded-3xl bg-surface p-5 shadow-card', className)} {...rest}>
+    <div className={cn('print-flat min-w-0 rounded-3xl p-5', raised ? 'raised' : 'bg-surface shadow-card', className)} {...rest}>
       {children}
     </div>
   )
@@ -164,15 +165,24 @@ export function Delta({ value, goodWhenUp = true, className }: { value: number |
 }
 
 export function StatTile({
-  label, value, unit, delta, goodWhenUp, hint, icon, className,
+  label, value, unit, delta, goodWhenUp, hint, icon, viz, featured, className,
 }: {
   label: string; value: ReactNode; unit?: string; delta?: number | null; goodWhenUp?: boolean; hint?: ReactNode
   icon?: ReactNode; className?: string
+  /** Mini gráfico no rodapé do cartão (barrinhas, medidor…), como nos KPIs de dash2.png */
+  viz?: ReactNode
+  /** Indicador principal da seção: ganha o relevo de tecla */
+  featured?: boolean
 }) {
   return (
-    <Card className={cn('flex min-h-[128px] flex-col justify-between gap-4', className)}>
+    <Card raised={featured} className={cn('flex flex-col justify-between gap-4', viz ? 'min-h-[196px]' : 'min-h-[128px]', className)}>
       <div className="flex items-start justify-between gap-2">
-        <span className="text-[13px] font-semibold text-ink">{label}</span>
+        <span className="flex items-center gap-2 text-[13px] font-semibold text-ink">
+          {featured ? (
+            <span className="key-tile h-8 w-8 text-brand"><Sparkles size={15} aria-hidden /></span>
+          ) : viz ? <Sparkles size={13} className="text-brand" aria-hidden /> : null}
+          {label}
+        </span>
         {icon && <span className="text-ink-3">{icon}</span>}
       </div>
       <div className="min-w-0">
@@ -187,6 +197,7 @@ export function StatTile({
           </div>
         )}
       </div>
+      {viz && <div>{viz}</div>}
     </Card>
   )
 }
@@ -405,7 +416,7 @@ export function Modal({
   const width = { sm: 'sm:max-w-md', md: 'sm:max-w-xl', lg: 'sm:max-w-3xl', xl: 'sm:max-w-5xl' }[size]
   return createPortal(
     <div className="no-print fixed inset-0 z-50 flex items-end justify-center sm:items-center sm:p-6">
-      <div className="absolute inset-0 animate-fade bg-black/50" onClick={onClose} aria-hidden />
+      <div className="absolute inset-0 animate-fade bg-black/40 backdrop-blur-sm" onClick={onClose} aria-hidden />
       <div
         role="dialog"
         aria-modal="true"

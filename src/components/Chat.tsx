@@ -196,7 +196,7 @@ export function ChatHeader({ onClose }: { onClose?: () => void }) {
 }
 
 /** Conversa com a Nova. Usada no painel lateral (desktop) e na tela cheia (celular e /ia). */
-export function Chat({ onNavigate, className }: { onNavigate?: () => void; className?: string }) {
+export function Chat({ onNavigate, className, suggestions }: { onNavigate?: () => void; className?: string; suggestions?: string[] }) {
   const messages = useChat((s) => s.messages)
   const busy = useChat((s) => s.busy)
   const send = useChat((s) => s.send)
@@ -229,8 +229,14 @@ export function Chat({ onNavigate, className }: { onNavigate?: () => void; class
               </p>
             </div>
             <div className="mb-1 text-xs text-ink-3">Experimente perguntar</div>
-            {SUGGESTIONS.map((g) => <Suggestion key={g.group} text={g.items[0]} onAsk={ask} />)}
-            <Suggestion text="Como está o mês?" onAsk={ask} />
+            {suggestions
+              ? suggestions.map((q) => <Suggestion key={q} text={q} onAsk={ask} />)
+              : (
+                <>
+                  {SUGGESTIONS.map((g) => <Suggestion key={g.group} text={g.items[0]} onAsk={ask} />)}
+                  <Suggestion text="Como está o mês?" onAsk={ask} />
+                </>
+              )}
           </div>
         ) : (
           messages.map((m, i) =>

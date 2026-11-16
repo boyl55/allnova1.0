@@ -1,18 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Boxes, Pencil, Plus, ReceiptText, Target, Trash2 } from 'lucide-react'
+import { Boxes, Pencil, Plus, ReceiptText, Target, Trash2, TrendingUp } from 'lucide-react'
 import type { Expense, ExpenseCategory } from '../types'
 import {
-  compare, delta, EXPENSE_CATEGORIES, EXPENSE_LABEL, expensesByCategory, expensesOfMonth, monthFinance,
-  monthlyFinanceSeries, stockByCategory, stockTotals,
+  compare, dailySeries, delta, EXPENSE_CATEGORIES, EXPENSE_LABEL, expensesByCategory, expensesOfMonth, monthFinance,
+  stockByCategory, stockTotals,
 } from '../lib/analytics'
 import { dayKey, fmtDay, parseDay } from '../lib/dates'
 import { brl, brl0, num, pct } from '../lib/format'
 import { useData, useNow } from '../hooks'
 import { useStore } from '../store/store'
 import { toast, useUI } from '../store/ui'
-import { BarList, GroupedColumns } from '../components/charts'
+import { BarList, Donut, MiniBars } from '../components/charts'
+import { Folder } from '../components/Folder'
 import {
-  Badge, Button, Card, CardHead, Empty, Field, IconButton, Input, Modal, NumInput, PeriodNav, Progress, Select,
+  Badge, Button, Card, CardHead, Delta, Empty, Field, IconButton, Input, Modal, NumInput, PeriodNav, Progress, Select,
   StatTile, TD, TH, Toggle,
 } from '../components/ui'
 
@@ -31,7 +32,7 @@ export function Financeiro() {
 
   const fin = useMemo(() => monthFinance(d.sales, d.expenses, d.settings, offset, now), [d, offset, now])
   const cmp = useMemo(() => compare(d.sales, 'mes', offset, now), [d.sales, offset, now])
-  const series = useMemo(() => monthlyFinanceSeries(d.sales, d.expenses, d.settings, 6, now), [d, now])
+  const dayRevenue = useMemo(() => dailySeries(cmp.curSales, cmp.cur.start, cmp.cur.end).map((p) => p.revenue), [cmp])
   const list = useMemo(() => expensesOfMonth(d.expenses, fin.key).sort((a, b) => b.date.localeCompare(a.date)), [d.expenses, fin.key])
   const cats = useMemo(() => expensesByCategory(list).sort((a, b) => b.amount - a.amount), [list])
   const stock = useMemo(() => stockTotals(d.products), [d.products])
@@ -53,7 +54,33 @@ export function Financeiro() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="flex flex-col lg:col-span-5">
+        {/* Faturamento em destaque */}
+        <Folder tone="brand" tab={34} className="lg:col-span-7" bodyClassName="flex h-full flex-col justify-between gap-6 p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 text-[13px] font-semibold opacity-80"><TrendingUp size={15} /> Faturamento</div>
+              <div className="mt-0.5 text-xs opacity-70">{fin.period.label}</div>
+            </div>
+            <span className="glass rounded-full px-3 py-1 text-xs font-semibold">
+              {cmp.partial ? 'vs. mesmo trecho do mês anterior' : 'vs. mês anterior'}
+            </span>
+          </div>
+          <div>
+            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span className="text-[44px] font-semibold leading-none tracking-tight sm:text-[56px]">{brl0(fin.revenue)}</span>
+              <Delta value={delta(cmp.curT.revenue, cmp.prevT.revenue)} className="text-sm" />
+            </div>
+            <p className="mt-2 text-[13px] opacity-75">
+              {fin.revenue ? `Lucro bruto de ${brl0(fin.gross)} · margem de ${pct(fin.margin)}` : 'Nenhuma venda registrada neste mês.'}
+            </p>
+          </div>
+          <div className="glass rounded-2xl p-3">
+            <MiniBars data={dayRevenue} highlight={dayRevenue.length} height={64} label="Faturamento por dia do mês" />
+            <div className="mt-1.5 flex justify-between text-[11px] opacity-70"><span>Dia 1</span><span>Faturamento por dia</span><span>Dia {dayRevenue.length}</span></div>
+          </div>
+        </Folder>
+
+        <Card raised className="flex flex-col lg:col-span-5">
           <CardHead icon={<Target size={18} />} title="Meta de faturamento" subtitle={fin.period.label} />
           {fin.goal > 0 ? (
             <>
@@ -82,34 +109,20 @@ export function Financeiro() {
           )}
         </Card>
 
-        <div className="grid grid-cols-2 gap-4 lg:col-span-7 xl:grid-cols-3">
-          <StatTile
-            label="Faturamento" value={brl0(fin.revenue)} delta={delta(cmp.curT.revenue, cmp.prevT.revenue)}
-            hint={cmp.partial ? 'vs. mesmo trecho do mês anterior' : 'vs. mês anterior'}
-          />
-          <StatTile label="Custo das peças vendidas" value={brl0(fin.cost)} hint={fin.revenue ? `${pct((fin.cost / fin.revenue) * 100)} do faturamento` : undefined} />
-          <StatTile label="Lucro bruto" value={brl0(fin.gross)} hint={`Margem de ${pct(fin.margin)}`} />
-          <StatTile label="Despesas" value={brl0(fin.expenses)} hint={fin.revenue ? `${pct((fin.expenses / fin.revenue) * 100)} do faturamento` : `${num(list.length)} lançamentos`} />
-          <StatTile
-            label="Lucro líquido" value={brl0(fin.net)}
-            hint={current ? 'Até agora, com as despesas já lançadas' : `Margem líquida de ${pct(fin.netMargin)}`}
-            className="col-span-2 xl:col-span-2"
-          />
-        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        <StatTile label="Custo das peças vendidas" value={brl0(fin.cost)} hint={fin.revenue ? `${pct((fin.cost / fin.revenue) * 100)} do faturamento` : undefined} />
+        <StatTile label="Lucro bruto" value={brl0(fin.gross)} hint={`Margem de ${pct(fin.margin)}`} />
+        <StatTile label="Despesas" value={brl0(fin.expenses)} hint={fin.revenue ? `${pct((fin.expenses / fin.revenue) * 100)} do faturamento` : `${num(list.length)} lançamentos`} />
+        <StatTile
+          label="Lucro líquido" value={brl0(fin.net)}
+          hint={current ? 'Até agora, com as despesas já lançadas' : `Margem líquida de ${pct(fin.netMargin)}`}
+        />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-12">
         <Card className="lg:col-span-7">
-          <CardHead title="Faturamento x custos" subtitle="Últimos 6 meses. Custos = peças vendidas + despesas lançadas." />
-          <div className="mt-4">
-            <GroupedColumns
-              data={series.map((f) => ({ label: f.label, a: f.revenue, b: f.totalCosts, full: f.period.label }))}
-              names={['Faturamento', 'Custos']} format={brl} height={372}
-            />
-          </div>
-        </Card>
-
-        <Card className="lg:col-span-5">
           <CardHead icon={<Boxes size={18} />} title="Valor do estoque" subtitle={`${num(stock.pieces)} peças em ${num(stock.count)} produtos`} />
           <div className="mt-5 grid grid-cols-3 gap-3">
             <Mini label="A preço de custo" value={brl0(stock.cost)} big />
@@ -121,20 +134,20 @@ export function Financeiro() {
             <BarList items={stockCats.map((c) => ({ key: c.id, label: c.name, value: c.cost, sub: `${num(c.pieces)} peças` }))} format={brl0} empty="Cadastre produtos para ver o valor do estoque." />
           </div>
         </Card>
-      </div>
 
-      <div className="grid gap-4 lg:grid-cols-12">
-        <Card className="lg:col-span-4">
+        <Card className="lg:col-span-5">
           <CardHead title="Despesas por categoria" subtitle={fin.period.label} />
           <div className="mt-4">
-            <BarList
-              items={cats.map((c) => ({ key: c.key, label: c.label, value: c.amount, sub: fin.expenses ? pct((c.amount / fin.expenses) * 100) : undefined }))}
-              format={brl0} empty="Nenhuma despesa lançada neste mês."
+            <Donut
+              items={cats.map((c) => ({ key: c.key, label: c.label, value: c.amount }))}
+              format={brl0} centerLabel="Despesas" centerValue={brl0(fin.expenses)}
             />
           </div>
         </Card>
+      </div>
 
-        <Card className="lg:col-span-8">
+      <div>
+        <Card>
           <CardHead icon={<ReceiptText size={18} />} title="Despesas do mês" subtitle={`${num(list.length)} lançamentos · ${brl(fin.expenses)}`} />
           {list.length === 0 ? (
             <Empty

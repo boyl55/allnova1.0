@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Camera, ImagePlus, Plus, Settings2, Shirt, Trash2, X } from 'lucide-react'
+import { Camera, ImagePlus, Plus, Send, Settings2, Shirt, ShoppingCart, Trash2, X } from 'lucide-react'
 import type { Product, SizeStock } from '../types'
 import { marginOf, stockOf } from '../lib/analytics'
 import { brl, code, normalize, num, pct, plural } from '../lib/format'
@@ -9,6 +9,7 @@ import { useCategoryNames } from '../hooks'
 import { useStore } from '../store/store'
 import { toast, useUI } from '../store/ui'
 import { ProductThumb } from '../components/ProductThumb'
+import { ShareModal } from './Catalogo'
 import {
   Badge, Button, Card, Chip, cn, Empty, Field, IconButton, Input, Modal, NumInput, SearchInput, Select, Textarea,
 } from '../components/ui'
@@ -33,6 +34,9 @@ export function Produtos() {
   const [sort, setSort] = useState<Sort>('recentes')
   const [form, setForm] = useState<Form | null>(null)
   const [catsOpen, setCatsOpen] = useState(false)
+  const [sharing, setSharing] = useState<Product | null>(null)
+  const cart = useUI((s) => s.cart)
+  const quickAdd = useUI((s) => s.quickAdd)
 
   const blank = (): Form => ({
     name: '', brand: '', categoryId: cat !== 'todas' ? cat : categories[0]?.id ?? '', price: 0, cost: 0,
@@ -106,42 +110,67 @@ export function Produtos() {
         <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:gap-4 xl:grid-cols-4 2xl:grid-cols-5">
           {list.map((p) => {
             const total = stockOf(p)
+            const inCart = cart.filter((i) => i.productId === p.id).reduce((a, i) => a + i.qty, 0)
             return (
-              <button
-                key={p.id} type="button" onClick={() => setForm({ ...p, sizes: p.sizes.map((s) => ({ ...s })), photos: [...p.photos] })}
-                className="group overflow-hidden rounded-3xl bg-surface text-left shadow-card transition hover:-translate-y-0.5"
-              >
-                <div className="relative aspect-[4/5] overflow-hidden">
-                  <ProductThumb product={p} categoryName={catNames.get(p.categoryId)} className="h-full w-full transition duration-300 group-hover:scale-[1.03]" />
-                  <span className="absolute left-2.5 top-2.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white backdrop-blur">{code(p.code)}</span>
-                  {p.photos.length > 1 && (
-                    <span className="absolute bottom-2.5 right-2.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
-                      <Camera size={11} /> {p.photos.length}
-                    </span>
-                  )}
-                  {total === 0 && <Badge tone="bad" className="absolute right-2.5 top-2.5">Zerado</Badge>}
-                  {total > 0 && total <= p.minStock && <Badge tone="warn" className="absolute right-2.5 top-2.5">Baixo</Badge>}
-                </div>
-                <div className="p-3.5">
-                  <div className="truncate text-xs text-ink-3">{p.brand || 'Sem marca'} · {catNames.get(p.categoryId) ?? 'Sem categoria'}</div>
-                  <div className="mt-0.5 truncate text-[13.5px] font-semibold text-ink">{p.name}</div>
-                  <div className="mt-1.5 text-[17px] font-semibold tracking-tight text-ink">{brl(p.price)}</div>
-                  <div className="truncate text-xs text-ink-3">Custo {brl(p.cost)} · margem {pct(marginOf(p))}</div>
-                  <div className="mt-2.5 flex flex-wrap gap-1">
-                    {p.sizes.map((s) => (
-                      <span
-                        key={s.size}
-                        className={cn(
-                          'inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-                          s.qty === 0 ? 'bg-bad-soft text-bad-ink' : 'bg-surface-2 text-ink-2',
-                        )}
-                      >
-                        {s.size} <b className="font-semibold">{s.qty}</b>
+              <div key={p.id} className="group relative overflow-hidden rounded-3xl bg-surface shadow-card transition hover:-translate-y-0.5">
+                <button
+                  type="button" onClick={() => setForm({ ...p, sizes: p.sizes.map((s) => ({ ...s })), photos: [...p.photos] })}
+                  className="block w-full text-left" aria-label={`Editar ${p.name}`}
+                >
+                  <div className="relative aspect-[4/5] overflow-hidden">
+                    <ProductThumb product={p} categoryName={catNames.get(p.categoryId)} className="h-full w-full transition duration-300 group-hover:scale-[1.03]" />
+                    <span className="absolute left-2.5 top-2.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white backdrop-blur">{code(p.code)}</span>
+                    {p.photos.length > 1 && (
+                      <span className="absolute bottom-2.5 left-2.5 flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
+                        <Camera size={11} /> {p.photos.length}
                       </span>
-                    ))}
+                    )}
+                    {total === 0 && <Badge tone="bad" className="absolute right-2.5 top-2.5">Zerado</Badge>}
+                    {total > 0 && total <= p.minStock && <Badge tone="warn" className="absolute right-2.5 top-2.5">Baixo</Badge>}
                   </div>
+                  <div className="p-3.5 pb-3">
+                    <div className="truncate text-xs text-ink-3">{p.brand || 'Sem marca'} · {catNames.get(p.categoryId) ?? 'Sem categoria'}</div>
+                    <div className="mt-0.5 truncate text-[13.5px] font-semibold text-ink">{p.name}</div>
+                    <div className="mt-1.5 text-[17px] font-semibold tracking-tight text-ink">{brl(p.price)}</div>
+                    <div className="truncate text-xs text-ink-3">Custo {brl(p.cost)} · margem {pct(marginOf(p))}</div>
+                    <div className="mt-2.5 flex flex-wrap gap-1">
+                      {p.sizes.map((s) => (
+                        <span
+                          key={s.size}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+                            s.qty === 0 ? 'bg-bad-soft text-bad-ink' : 'bg-surface-2 text-ink-2',
+                          )}
+                        >
+                          {s.size} <b className="font-semibold">{s.qty}</b>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </button>
+
+                {/* Ações da peça: juntar numa venda ou enviar ao cliente */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 aspect-[4/5]">
+                  <button
+                    type="button" disabled={total === 0} onClick={() => quickAdd(p.id)}
+                    aria-label={`Adicionar ${p.name} ao carrinho`} title="Adicionar ao carrinho"
+                    className="glass-strong pointer-events-auto absolute bottom-2.5 right-2.5 grid h-11 w-11 place-items-center rounded-full text-ink transition hover:scale-105 active:scale-95 disabled:opacity-40"
+                  >
+                    <ShoppingCart size={18} />
+                    {inCart > 0 ? (
+                      <span className="absolute -right-1 -top-1 grid h-5 min-w-5 place-items-center rounded-full bg-brand px-1 text-[11px] font-bold text-white">{inCart}</span>
+                    ) : (
+                      <span className="absolute -right-0.5 -top-0.5 grid h-4 w-4 place-items-center rounded-full bg-brand text-white"><Plus size={11} strokeWidth={3} /></span>
+                    )}
+                  </button>
                 </div>
-              </button>
+                <IconButton
+                  label={`Enviar ${p.name} ao cliente`} variant="ghost" size="sm" onClick={() => setSharing(p)}
+                  className="absolute bottom-2.5 right-2.5"
+                >
+                  <Send size={15} />
+                </IconButton>
+              </div>
             )
           })}
         </div>
@@ -149,6 +178,13 @@ export function Produtos() {
 
       <ProductForm form={form} onClose={() => setForm(null)} />
       <CategoriesModal open={catsOpen} onClose={() => setCatsOpen(false)} />
+      <ShareModal
+        catalog={sharing && {
+          id: 'avulso', name: sharing.name, productIds: [sharing.id], showPrices: true, createdAt: 0,
+          message: 'Oi! Separei esta peça para você. Se gostar, é só me chamar.',
+        }}
+        onClose={() => setSharing(null)}
+      />
     </div>
   )
 }

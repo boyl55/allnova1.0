@@ -1,16 +1,17 @@
 import { useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Check, ClipboardList, MessageCircle, PackageCheck, PackagePlus, Truck } from 'lucide-react'
+import { Link, useNavigate } from 'react-router-dom'
+import { Check, ClipboardList, PackageCheck, PackagePlus, Truck } from 'lucide-react'
 import type { StockAlert } from '../lib/analytics'
 import { fmtDay } from '../lib/dates'
-import { brl0, code, firstName, num, plural, whatsappLink } from '../lib/format'
+import { brl0, code, num, plural } from '../lib/format'
 import { copyText } from '../lib/image'
 import { useAlerts, useCategoryNames } from '../hooks'
 import { useStore } from '../store/store'
 import { toast, useUI } from '../store/ui'
 import { AlertBadge } from '../components/AlertBadge'
+import { Chat, ChatHeader } from '../components/Chat'
 import { ProductThumb } from '../components/ProductThumb'
-import { Badge, Button, Card, Empty, Segmented, StatTile } from '../components/ui'
+import { Badge, Button, Card, Empty, Segmented } from '../components/ui'
 import { SizeChips } from './Estoque'
 
 type Filter = 'todos' | 'zerado' | 'critico' | 'baixo' | 'pedidos'
@@ -38,11 +39,6 @@ export function Avisos() {
     return s && (s.kind === 'meu' || settings.vip) ? s : undefined
   }
 
-  const orderMessage = (a: StockAlert, contact: string) =>
-    `Olá, ${firstName(contact)}! Aqui é ${settings.ownerName ? `${firstName(settings.ownerName)}, da ` : 'da '}${settings.storeName}. ` +
-    `Preciso repor ${a.product.name}: ${num(a.suggest)} peças${a.zeroSizes.length ? ` (principalmente ${a.zeroSizes.join(', ')})` : ''}. ` +
-    'Consegue me passar disponibilidade, preço e prazo de entrega?'
-
   const copyList = async () => {
     const lines = pending.map(
       (a) => `• ${a.product.name} (${code(a.product.code)}) — ${num(a.suggest)} peças${a.zeroSizes.length ? ` · em falta: ${a.zeroSizes.join(', ')}` : ''}`,
@@ -51,29 +47,38 @@ export function Avisos() {
     toast(ok ? 'Lista de compras copiada' : 'Não foi possível copiar', ok ? 'good' : 'bad')
   }
 
+  /** Conversa com a Nova sobre reposição (mesmo histórico da Nova IA) */
+  const chat = (
+    <Card raised className="flex h-[440px] flex-col overflow-hidden p-0">
+      <ChatHeader />
+      <Chat
+        suggestions={[
+          'O que preciso repor com urgência?',
+          'Quanto vou gastar para repor o estoque?',
+          'Quais produtos vendem mais rápido e vão acabar?',
+        ]}
+      />
+    </Card>
+  )
+
   if (alerts.length === 0) {
     return (
-      <Card>
-        <Empty
-          icon={<PackageCheck size={24} />} title="Estoque em dia"
-          text="Nenhum produto está abaixo do estoque mínimo. Os avisos aparecem aqui assim que algo começar a acabar."
-          action={<Button variant="outline" onClick={() => navigate('/estoque')}>Ver estoque</Button>}
-        />
-      </Card>
+      <div className="space-y-4">
+        <Card>
+          <Empty
+            icon={<PackageCheck size={24} />} title="Estoque em dia"
+            text="Nenhum produto está abaixo do estoque mínimo. Os avisos aparecem aqui assim que algo começar a acabar."
+            action={<Button variant="outline" onClick={() => navigate('/estoque')}>Ver estoque</Button>}
+          />
+        </Card>
+        {chat}
+      </div>
     )
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile label="Zerados" value={num(count('zerado'))} hint="Sem nenhuma peça" />
-        <StatTile label="Críticos" value={num(count('critico'))} hint="Estoque para poucos dias" />
-        <StatTile label="Baixos" value={num(count('baixo'))} hint="Abaixo do mínimo ou sem um tamanho" />
-        <StatTile
-          label="Compra sugerida" value={brl0(pending.reduce((a, x) => a + x.investment, 0))}
-          hint={`${plural(pending.reduce((a, x) => a + x.suggest, 0), 'peça', 'peças')} ainda sem pedido`}
-        />
-      </div>
+      {chat}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="no-scrollbar -mx-4 w-[calc(100%+2rem)] overflow-x-auto px-4 lg:mx-0 lg:w-auto lg:px-0">
@@ -134,16 +139,12 @@ export function Avisos() {
                 )}
 
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {supplier ? (
-                    <a
-                      href={whatsappLink(orderMessage(a, supplier.contact), supplier.phone)} target="_blank" rel="noreferrer"
-                      className="inline-flex h-9 items-center gap-2 rounded-full bg-brand px-3.5 text-[13px] font-semibold text-white transition hover:bg-brand-strong"
-                    >
-                      <MessageCircle size={15} /> Pedir pelo WhatsApp
-                    </a>
-                  ) : (
-                    <Button size="sm" variant="brand" icon={<Truck size={15} />} onClick={() => navigate('/fornecedores')}>Escolher fornecedor</Button>
-                  )}
+                  <Link
+                    to="/fornecedores"
+                    className="inline-flex h-9 items-center gap-2 rounded-full bg-brand px-3.5 text-[13px] font-semibold text-white transition hover:bg-brand-strong"
+                  >
+                    <Truck size={15} /> {supplier ? 'Ver fornecedores' : 'Escolher fornecedor'}
+                  </Link>
                   <Button size="sm" variant="outline" onClick={() => setOrdered(p.id, !done)}>{done ? 'Desmarcar pedido' : 'Marcar como pedido'}</Button>
                   <Button size="sm" variant="soft" icon={<PackagePlus size={15} />} onClick={() => openStockMove(p.id)}>Dar entrada</Button>
                 </div>

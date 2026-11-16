@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Download, Printer, Trash2 } from 'lucide-react'
 import {
-  byCategory, byEmployee, byPayment, byProduct, compare, dailySeries, delta, PAYMENT_LABEL, saleQty,
+  byCategory, byEmployee, byPayment, byProduct, compare, dailySeries, delta, PAYMENT_LABEL, periodSeries, saleQty,
 } from '../lib/analytics'
 import { fmtDate, fmtDateTime, fmtTime, prevLabel, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex, type PeriodKind } from '../lib/dates'
 import { brl, brl0, num, pct, plural } from '../lib/format'
@@ -9,7 +9,7 @@ import { download } from '../lib/image'
 import { useData, useNow } from '../hooks'
 import { useStore } from '../store/store'
 import { toast, useUI } from '../store/ui'
-import { BarList, Columns, SplitBar } from '../components/charts'
+import { BarList, Columns, Donut, MeterBar, MiniBars } from '../components/charts'
 import { Badge, Button, Card, CardHead, Empty, IconButton, PeriodNav, Segmented, StatTile, TD, TH } from '../components/ui'
 
 export function Relatorios() {
@@ -22,9 +22,22 @@ export function Relatorios() {
   const [offset, setOffset] = useState(0)
   const [allProducts, setAllProducts] = useState(false)
   const [shown, setShown] = useState(12)
+  const [view, setView] = useState<'dia' | 'semana' | 'mes'>('dia')
 
   const c = useMemo(() => compare(d.sales, kind, offset, now), [d.sales, kind, offset, now])
   const daily = useMemo(() => dailySeries(c.curSales, c.cur.start, c.cur.end), [c])
+  /** Dados do gráfico de faturamento: dia a dia no período, ou semana a semana / mês a mês */
+  const chart = useMemo(() => {
+    if (view === 'dia') {
+      return daily.map((p) => ({
+        label: kind === 'semana' ? WEEKDAYS[weekdayIndex(p.date)] : String(p.date.getDate()),
+        value: p.revenue, full: `${WEEKDAYS_FULL[weekdayIndex(p.date)]}, ${p.label} · ${plural(p.count, 'venda', 'vendas')}`,
+      }))
+    }
+    return periodSeries(d.sales, view, view === 'semana' ? 12 : 12, now).map((p) => ({
+      label: p.label, value: p.revenue, full: `${view === 'semana' ? 'Semana de ' : ''}${p.full} · ${plural(p.count, 'venda', 'vendas')}`,
+    }))
+  }, [view, daily, kind, d.sales, now])
   const payments = useMemo(() => byPayment(c.curSales), [c])
   const cats = useMemo(() => byCategory(c.curSales, d.categories), [c, d.categories])
   const team = useMemo(() => byEmployee(c.curSales, d.employees).filter((e) => e.count > 0), [c, d.employees])
@@ -75,33 +88,33 @@ export function Relatorios() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 2xl:grid-cols-6">
-        <StatTile label="Faturamento" value={brl0(c.curT.revenue)} delta={delta(c.curT.revenue, c.prevT.revenue)} hint={versus} />
-        <StatTile label="Vendas" value={num(c.curT.count)} delta={delta(c.curT.count, c.prevT.count)} hint={versus} />
-        <StatTile label="Ticket médio" value={brl0(c.curT.ticket)} delta={delta(c.curT.ticket, c.prevT.ticket)} hint={versus} />
-        <StatTile label="Peças vendidas" value={num(c.curT.items)} delta={delta(c.curT.items, c.prevT.items)} hint={versus} />
-        <StatTile label="Lucro bruto" value={brl0(c.curT.profit)} delta={delta(c.curT.profit, c.prevT.profit)} hint={`Margem de ${pct(c.curT.margin)}`} />
-        <StatTile label="Descontos" value={brl0(c.curT.discount)} hint={c.curT.revenue ? `${pct((c.curT.discount / (c.curT.revenue + c.curT.discount)) * 100, 1)} do valor cheio` : undefined} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatTile featured label="Faturamento" value={brl0(c.curT.revenue)} delta={delta(c.curT.revenue, c.prevT.revenue)} hint={versus} viz={<MiniBars data={daily.map((p) => p.revenue)} highlight={daily.length} height={44} label="Faturamento por dia" />} />
+        <StatTile label="Vendas" value={num(c.curT.count)} delta={delta(c.curT.count, c.prevT.count)} hint={versus} viz={<MiniBars data={daily.map((p) => p.count)} highlight={daily.length} height={44} label="Vendas por dia" />} />
+        <StatTile label="Lucro bruto" value={brl0(c.curT.profit)} delta={delta(c.curT.profit, c.prevT.profit)} hint={`Margem de ${pct(c.curT.margin)}`} viz={<MeterBar value={c.curT.profit} total={c.curT.revenue} label="Lucro sobre o faturamento" />} />
       </div>
 
-      <Card>
-        <CardHead title="Faturamento por dia" subtitle={c.cur.label} />
-        <div className="mt-4">
-          <Columns
-            data={daily.map((p) => ({
-              label: kind === 'semana' ? WEEKDAYS[weekdayIndex(p.date)] : String(p.date.getDate()),
-              value: p.revenue, full: `${WEEKDAYS_FULL[weekdayIndex(p.date)]}, ${p.label} · ${plural(p.count, 'venda', 'vendas')}`,
-            }))}
-            name="Faturamento" format={brl} height={230}
+      <Card raised>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <CardHead title="Faturamento" subtitle={view === 'dia' ? c.cur.label : view === 'semana' ? 'Últimas 12 semanas' : 'Últimos 12 meses'} />
+          <Segmented
+            label="Agrupar faturamento" value={view} onChange={setView}
+            options={[{ value: 'dia', label: 'Diário' }, { value: 'semana', label: 'Semanal' }, { value: 'mes', label: 'Mensal' }]}
           />
+        </div>
+        <div className="mt-4">
+          <Columns data={chart} name="Faturamento" format={brl} height={260} />
         </div>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <Card>
           <CardHead title="Formas de pagamento" subtitle="Participação no faturamento" />
-          <div className="mt-5">
-            <SplitBar items={payments.map((p) => ({ key: p.key, label: p.label, value: p.revenue }))} format={brl0} />
+          <div className="mt-4">
+            <Donut
+              items={payments.map((p) => ({ key: p.key, label: p.label, value: p.revenue }))}
+              format={brl0} centerLabel="Total" centerValue={brl0(c.curT.revenue)} size={190}
+            />
           </div>
         </Card>
         <Card>

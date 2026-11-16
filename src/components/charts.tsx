@@ -1,3 +1,4 @@
+import { useId, useState } from 'react'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
@@ -79,30 +80,164 @@ export function TrendArea({ data, name, format, height = 220 }: { data: Point[];
   )
 }
 
-/** Colunas de uma única série; `activeIndex` destaca um período e suaviza os demais */
+/** Padrão hachurado e gradiente ativo (referência dash2.png). Os ids precisam ser únicos por gráfico. */
+function BarDefs({ id }: { id: string }) {
+  return (
+    <defs>
+      <pattern id={`${id}-hatch`} width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="6" height="6" fill="var(--bar-base)" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="var(--bar-hatch)" strokeWidth="1.6" />
+      </pattern>
+      <linearGradient id={`${id}-active`} x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor="var(--series-1)" stopOpacity="0.95" />
+        <stop offset="100%" stopColor="var(--series-1)" stopOpacity="0.22" />
+      </linearGradient>
+    </defs>
+  )
+}
+const useChartId = () => useId().replace(/[^a-zA-Z0-9]/g, '')
+
+/**
+ * Colunas de uma única série, no estilo hachurado: as barras ficam neutras e a ativa
+ * (a do mouse, do toque ou a selecionada) acende em gradiente.
+ */
 export function Columns({
   data, name, format, height = 220, activeIndex, onSelect,
 }: { data: Point[]; name: string; format: Fmt; height?: number; activeIndex?: number; onSelect?: (i: number) => void }) {
+  const id = useChartId()
   const fmt = axisFormatter(Math.max(0, ...data.map((d) => d.value)))
   return (
     <div style={{ height }} role="img" aria-label={`Gráfico de colunas de ${name.toLowerCase()}`}>
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-          <CartesianGrid vertical={false} stroke="var(--grid)" />
-          <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: 'var(--axis)' }} tick={TICK} minTickGap={12} interval="preserveStartEnd" tickMargin={8} />
+        <BarChart data={data} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
+          <BarDefs id={id} />
+          <CartesianGrid vertical={false} stroke="var(--grid)" strokeDasharray="2 4" />
+          <XAxis dataKey="label" tickLine={false} axisLine={false} tick={TICK} minTickGap={12} interval="preserveStartEnd" tickMargin={10} />
           <YAxis tickLine={false} axisLine={false} tick={TICK} width={44} tickFormatter={fmt} />
-          <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip format={format} />} />
+          <Tooltip cursor={false} content={<Tip format={format} />} />
           <Bar
-            dataKey="value" name={name} radius={[4, 4, 0, 0]} maxBarSize={24} isAnimationActive={false}
+            dataKey="value" name={name} radius={[10, 10, 4, 4]} maxBarSize={44} isAnimationActive={false}
+            activeBar={{ fill: `url(#${id}-active)`, stroke: 'var(--series-1)', strokeWidth: 1 }}
             onClick={onSelect ? (_: unknown, i: number) => onSelect(i) : undefined}
             className={onSelect ? 'cursor-pointer' : undefined}
           >
             {data.map((_, i) => (
-              <Cell key={i} fill={activeIndex === undefined || activeIndex === i ? 'var(--series-1)' : 'var(--series-dim)'} />
+              <Cell
+                key={i}
+                fill={activeIndex === i ? `url(#${id}-active)` : `url(#${id}-hatch)`}
+                stroke={activeIndex === i ? 'var(--series-1)' : 'var(--axis)'} strokeWidth={1}
+              />
             ))}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
+    </div>
+  )
+}
+
+/** Mini gráfico de barrinhas finas para dentro de um cartão de KPI; as últimas ganham a cor da marca */
+export function MiniBars({ data, highlight = 6, height = 56, label }: { data: number[]; highlight?: number; height?: number; label?: string }) {
+  const max = Math.max(...data, 1)
+  const first = data.length - highlight
+  return (
+    <div className="flex items-end gap-[3px]" style={{ height }} role="img" aria-label={label ?? 'Tendência recente'}>
+      {data.map((v, i) => (
+        <span
+          key={i}
+          className={cn('min-h-[3px] flex-1 rounded-t-[3px]', i >= first && v > 0 ? 'bar-active' : 'hatch')}
+          style={{ height: `${Math.max(6, (v / max) * 100)}%` }}
+        />
+      ))}
+    </div>
+  )
+}
+
+/** Medidor horizontal hachurado com marcador: quanto do total já foi atingido */
+export function MeterBar({ value, total, height = 22, label }: { value: number; total: number; height?: number; label?: string }) {
+  const p = total > 0 ? Math.max(0, Math.min(100, (value / total) * 100)) : 0
+  return (
+    <div className="relative pt-2" role="meter" aria-valuenow={Math.round(p)} aria-valuemin={0} aria-valuemax={100} aria-label={label ?? 'Progresso'}>
+      <div className="hatch relative overflow-hidden rounded-xl" style={{ height }}>
+        <div
+          className="absolute inset-y-0 left-0 rounded-xl transition-[width] duration-500"
+          style={{ width: `${p}%`, background: 'linear-gradient(90deg, color-mix(in srgb, var(--series-1) 25%, transparent), var(--series-1))' }}
+        />
+      </div>
+      <span className="absolute top-0 h-[calc(100%+2px)] w-[3px] -translate-x-1/2 rounded-full bg-ink transition-[left] duration-500" style={{ left: `${p}%` }} />
+    </div>
+  )
+}
+
+/** Rosca de segmentos grossos e arredondados (referência dash2.png), com legenda de filete colorido */
+export function Donut({
+  items, format, centerLabel, centerValue, size = 220,
+}: {
+  items: { key: string; label: string; value: number }[]
+  format: Fmt
+  centerLabel?: string
+  centerValue?: string
+  size?: number
+}) {
+  const [hover, setHover] = useState<string | null>(null)
+  const list = items.filter((i) => i.value > 0)
+  const total = list.reduce((a, i) => a + i.value, 0)
+  if (!total) return <p className="py-10 text-center text-sm text-ink-3">Sem dados no período.</p>
+
+  const R = 78
+  const SW = 26
+  const cap = (SW / 2 / R) * (180 / Math.PI) // quanto a ponta arredondada "come" de cada lado
+  const gap = 5
+  const pt = (deg: number) => {
+    const a = ((deg - 90) * Math.PI) / 180
+    return [100 + R * Math.cos(a), 100 + R * Math.sin(a)]
+  }
+  let at = 0
+  const arcs = list.map((it, i) => {
+    const span = (it.value / total) * 360
+    const from = at + cap + gap / 2
+    const to = Math.max(from + 0.01, at + span - cap - gap / 2)
+    at += span
+    const [x1, y1] = pt(from)
+    const [x2, y2] = pt(to)
+    return { ...it, d: `M ${x1} ${y1} A ${R} ${R} 0 ${to - from > 180 ? 1 : 0} 1 ${x2} ${y2}`, color: seriesColor(i) }
+  })
+  const current = arcs.find((a) => a.key === hover)
+
+  return (
+    <div>
+      <div className="relative mx-auto" style={{ width: size, height: size }} role="img" aria-label="Gráfico de rosca">
+        <svg viewBox="0 0 200 200" className="h-full w-full">
+          <circle cx="100" cy="100" r={R} fill="none" stroke="var(--bar-base)" strokeWidth={SW} />
+          {arcs.map((a) => (
+            <path
+              key={a.key} d={a.d} fill="none" stroke={a.color} strokeWidth={SW} strokeLinecap="round"
+              opacity={hover && hover !== a.key ? 0.35 : 1} className="cursor-pointer transition-opacity"
+              onMouseEnter={() => setHover(a.key)} onMouseLeave={() => setHover(null)}
+              onClick={() => setHover(hover === a.key ? null : a.key)}
+            />
+          ))}
+        </svg>
+        <div className="pointer-events-none absolute inset-0 grid place-items-center text-center">
+          <div>
+            <div className="text-xs text-ink-3">{current ? current.label : centerLabel}</div>
+            <div className="text-[26px] font-semibold leading-tight tracking-tight text-ink">
+              {current ? format(current.value) : centerValue}
+            </div>
+            {current && <div className="text-xs text-ink-3">{pct((current.value / total) * 100)}</div>}
+          </div>
+        </div>
+      </div>
+      <ul className="mt-5 grid grid-cols-2 gap-x-3 gap-y-3 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
+        {arcs.map((a) => (
+          <li
+            key={a.key} className="min-w-0 border-t-2 pt-1.5" style={{ borderColor: a.color }}
+            onMouseEnter={() => setHover(a.key)} onMouseLeave={() => setHover(null)}
+          >
+            <div className="truncate text-[11px] text-ink-3">{a.label}</div>
+            <div className="truncate text-[13px] font-semibold tabular-nums text-ink">{format(a.value)}</div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
@@ -141,19 +276,25 @@ export function CompareLines({
 export function GroupedColumns({
   data, names, format, height = 240,
 }: { data: { label: string; a: number; b: number; full?: string }[]; names: [string, string]; format: Fmt; height?: number }) {
+  const id = useChartId()
   const fmt = axisFormatter(Math.max(0, ...data.map((d) => Math.max(d.a, d.b))))
   return (
     <div>
-      <Legend className="mb-2" items={[{ label: names[0], color: seriesColor(0) }, { label: names[1], color: seriesColor(1) }]} />
+      {/* a primeira medida é a hachurada (base); a segunda acende em gradiente */}
+      <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-ink-2">
+        <span className="inline-flex items-center gap-1.5"><span className="hatch h-3 w-3 rounded-[4px] ring-1 ring-[var(--axis)]" />{names[0]}</span>
+        <span className="inline-flex items-center gap-1.5"><span className="bar-active h-3 w-3 rounded-[4px]" />{names[1]}</span>
+      </div>
       <div style={{ height }} role="img" aria-label={`Gráfico comparando ${names[0].toLowerCase()} e ${names[1].toLowerCase()}`}>
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }} barGap={2}>
-            <CartesianGrid vertical={false} stroke="var(--grid)" />
-            <XAxis dataKey="label" tickLine={false} axisLine={{ stroke: 'var(--axis)' }} tick={TICK} tickMargin={8} />
+          <BarChart data={data} margin={{ top: 12, right: 8, bottom: 0, left: 0 }} barGap={4}>
+            <BarDefs id={id} />
+            <CartesianGrid vertical={false} stroke="var(--grid)" strokeDasharray="2 4" />
+            <XAxis dataKey="label" tickLine={false} axisLine={false} tick={TICK} tickMargin={10} />
             <YAxis tickLine={false} axisLine={false} tick={TICK} width={44} tickFormatter={fmt} />
-            <Tooltip cursor={{ fill: 'var(--surface-2)' }} content={<Tip format={format} />} />
-            <Bar dataKey="a" name={names[0]} fill={seriesColor(0)} radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={false} />
-            <Bar dataKey="b" name={names[1]} fill={seriesColor(1)} radius={[4, 4, 0, 0]} maxBarSize={20} isAnimationActive={false} />
+            <Tooltip cursor={false} content={<Tip format={format} />} />
+            <Bar dataKey="a" name={names[0]} fill={`url(#${id}-hatch)`} stroke="var(--axis)" strokeWidth={1} radius={[8, 8, 3, 3]} maxBarSize={30} isAnimationActive={false} />
+            <Bar dataKey="b" name={names[1]} fill={`url(#${id}-active)`} stroke="var(--series-1)" strokeWidth={1} radius={[8, 8, 3, 3]} maxBarSize={30} isAnimationActive={false} />
           </BarChart>
         </ResponsiveContainer>
       </div>

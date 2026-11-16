@@ -1,20 +1,21 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import {
-  ArrowRight, Bell, BookImage, CalendarDays, ChevronLeft, ChevronRight, PackagePlus, Plus, Shirt, Sparkles, Target,
+  ArrowRight, Bell, BookImage, ChevronLeft, ChevronRight, PackagePlus, Plus, Shirt, Sparkles,
 } from 'lucide-react'
 import { NAV } from '../nav'
 import {
-  byEmployee, byProduct, compare, dailySeries, delta, inRange, monthFinance, periodSeries, stockTotals, totals,
+  byEmployee, byPayment, compare, dailySeries, delta, monthFinance, periodSeries, stockTotals,
 } from '../lib/analytics'
-import { addDays, MONTHS_FULL, startOfDay, WEEKDAYS, WEEKDAYS_FULL, weekdayIndex } from '../lib/dates'
+import { addDays, MONTHS_FULL, startOfDay, WEEKDAYS_FULL, weekdayIndex } from '../lib/dates'
 import { brl, brl0, firstName, num, pct, plural } from '../lib/format'
 import { buildInsights } from '../lib/insights'
 import { useAlerts, useCategoryNames, useData, useIsDesktop, useNow } from '../hooks'
 import { useChat } from '../store/chat'
 import { useUI } from '../store/ui'
 import { AlertBadge } from '../components/AlertBadge'
-import { BarList, CompareLines, PillMeter, TrendArea } from '../components/charts'
+import { Columns, Donut, MeterBar, MiniBars } from '../components/charts'
+import { Folder } from '../components/Folder'
 import { LogoMark } from '../components/Logo'
 import { ProductThumb } from '../components/ProductThumb'
 import { SearchBox } from '../components/Shell'
@@ -32,19 +33,19 @@ export function Home() {
   const openSale = useUI((s) => s.openSale)
   const openStockMove = useUI((s) => s.openStockMove)
   const setAI = useUI((s) => s.setAI)
+  const cartPieces = useUI((s) => s.cart.reduce((a, i) => a + i.qty, 0))
   const send = useChat((s) => s.send)
   const [range, setRange] = useState<Range>('30d')
   const [slide, setSlide] = useState(0)
 
   const today = startOfDay(now)
   const month = useMemo(() => compare(d.sales, 'mes', 0, now), [d.sales, now])
-  const week = useMemo(() => compare(d.sales, 'semana', 0, now), [d.sales, now])
   const fin = useMemo(() => monthFinance(d.sales, d.expenses, d.settings, 0, now), [d.sales, d.expenses, d.settings, now])
   const stock = useMemo(() => stockTotals(d.products), [d.products])
-  const todayT = useMemo(() => totals(inRange(d.sales, today, addDays(today, 1))), [d.sales, +today]) // eslint-disable-line react-hooks/exhaustive-deps
-  const lastWeekSameTime = useMemo(
-    () => totals(inRange(d.sales, addDays(today, -7), new Date(+now - 7 * 86400e3))),
-    [d.sales, now], // eslint-disable-line react-hooks/exhaustive-deps
+  const payments = useMemo(() => byPayment(month.curSales), [month])
+  const last14 = useMemo(
+    () => dailySeries(d.sales, addDays(today, -13), addDays(today, 1)).map((p) => p.revenue),
+    [d.sales, +today], // eslint-disable-line react-hooks/exhaustive-deps
   )
 
   const trend = useMemo(() => {
@@ -58,17 +59,8 @@ export function Home() {
     }))
   }, [d.sales, range, now]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const weekLines = useMemo(() => {
-    const cur = dailySeries(week.curSales, week.cur.start, week.cur.end)
-    const prev = dailySeries(inRange(d.sales, week.prev.start, week.prev.end), week.prev.start, week.prev.end)
-    return WEEKDAYS.map((label, i) => ({
-      label, atual: +cur[i].date <= +today ? cur[i].revenue : null, anterior: prev[i].revenue,
-    }))
-  }, [week, d.sales]) // eslint-disable-line react-hooks/exhaustive-deps
-
   const insights = useMemo(() => buildInsights(d, now), [d, now])
   const insight = insights.length ? insights[slide % insights.length] : null
-  const topProducts = useMemo(() => byProduct(month.curSales).slice(0, 5), [month])
   const team = useMemo(() => byEmployee(month.curSales, d.employees).slice(0, 4), [month, d.employees])
 
   const monthName = MONTHS_FULL[now.getMonth()]
@@ -84,7 +76,7 @@ export function Home() {
   return (
     <div>
       {/* ───── Topo no celular ───── */}
-      <section className="rounded-b-[32px] bg-surface px-4 pb-5 pt-[max(1rem,env(safe-area-inset-top))] shadow-card lg:hidden">
+      <section className="glass-strong rounded-b-[32px] border-t-0 px-4 pb-5 pt-[max(1rem,env(safe-area-inset-top))] lg:hidden">
         <div className="flex items-center gap-3">
           <LogoMark size={46} className="rounded-full" />
           <div className="min-w-0 flex-1">
@@ -98,20 +90,21 @@ export function Home() {
           </IconButton>
         </div>
         <SearchBox className="mt-4 [&_input]:bg-surface-2 [&_input]:shadow-none" />
+        {/* Os dois cartões principais: vender e conferir o estoque */}
         <div className="mt-3 grid grid-cols-2 gap-2.5">
-          <Link to="/relatorios" className="flex items-center justify-between gap-2 rounded-[20px] bg-brand p-3.5 text-white">
+          <button type="button" onClick={openSale} className="liquid-brand liquid-lift flex items-center justify-between gap-2 rounded-[20px] p-3 text-left">
             <span className="min-w-0">
-              <span className="block truncate text-lg font-semibold leading-tight">{brl0(todayT.revenue)}</span>
-              <span className="block text-xs text-white/80">Vendas de hoje</span>
+              <span className="block truncate text-[15px] font-semibold leading-tight">Nova venda</span>
+              <span className="block truncate text-xs text-white/80">{cartPieces ? `${plural(cartPieces, 'peça', 'peças')} no carrinho` : 'Registrar agora'}</span>
             </span>
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#17141f]"><ChevronRight size={17} /></span>
-          </Link>
-          <Link to="/avisos" className="flex items-center justify-between gap-2 rounded-[20px] bg-brand p-3.5 text-white">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#17141f]"><Plus size={16} /></span>
+          </button>
+          <Link to="/estoque" className="liquid-brand liquid-lift flex items-center justify-between gap-2 rounded-[20px] p-3">
             <span className="min-w-0">
-              <span className="block text-lg font-semibold leading-tight">{String(alerts.length).padStart(2, '0')}</span>
-              <span className="block truncate text-xs text-white/80">Para repor</span>
+              <span className="block truncate text-[15px] font-semibold leading-tight">Estoque</span>
+              <span className="block truncate text-xs text-white/80">{plural(stock.pieces, 'peça', 'peças')}</span>
             </span>
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#17141f]"><ChevronRight size={17} /></span>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#17141f]"><ChevronRight size={16} /></span>
           </Link>
         </div>
       </section>
@@ -150,7 +143,7 @@ export function Home() {
               { label: 'Entrada de estoque', icon: <PackagePlus size={18} />, on: () => openStockMove() },
               { label: 'Enviar catálogo', icon: <BookImage size={18} />, on: () => navigate('/catalogo') },
             ].map((a) => (
-              <button key={a.label} type="button" onClick={a.on} className="flex items-center gap-3 rounded-[20px] bg-surface p-3 text-left shadow-card">
+              <button key={a.label} type="button" onClick={a.on} className="flex items-center gap-3 rounded-[20px] bg-surface p-3 text-left shadow-card transition active:scale-[0.98]">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand-soft text-brand-ink">{a.icon}</span>
                 <span className="text-[13px] font-semibold leading-tight text-ink">{a.label}</span>
               </button>
@@ -158,49 +151,66 @@ export function Home() {
           </div>
         </section>
 
-        {/* ───── Linha 1: indicadores + faturamento ───── */}
-        <div className="grid gap-4 lg:grid-cols-12">
-          <div className="grid grid-cols-2 gap-4 lg:col-span-5">
-            <StatTile
-              label="Faturamento hoje" value={brl0(todayT.revenue)}
-              delta={delta(todayT.revenue, lastWeekSameTime.revenue)}
-              hint="vs. semana passada"
-            />
-            <StatTile
-              label="Vendas no mês" value={num(month.curT.count)} unit="vendas"
-              delta={delta(month.curT.count, month.prevT.count)} hint={`${num(month.curT.items)} peças vendidas`}
-            />
-            <StatTile
-              label="Ticket médio" value={brl0(month.curT.ticket)}
-              delta={delta(month.curT.ticket, month.prevT.ticket)} hint={`Em ${monthName}`}
-            />
-            <StatTile label="Peças em estoque" value={num(stock.pieces)} unit="peças" hint={`${brl0(stock.cost)} a preço de custo`} />
-          </div>
+        {/* ───── Linha 1: três indicadores com mini gráfico ───── */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <StatTile
+            featured label="Vendas no mês" value={num(month.curT.count)} unit="vendas"
+            delta={delta(month.curT.count, month.prevT.count)} hint={`${num(month.curT.items)} peças vendidas`}
+            viz={<MiniBars data={last14} label="Faturamento dos últimos 14 dias" />}
+          />
+          <StatTile
+            label="Peças em estoque" value={num(stock.pieces)} unit="peças"
+            hint={`${brl0(stock.cost)} a custo · ${brl0(stock.retail)} a venda`}
+            viz={<MeterBar value={stock.cost} total={stock.retail} label="Custo do estoque sobre o valor de venda" />}
+          />
+          <StatTile
+            className="col-span-2 lg:col-span-1"
+            label={`Meta de ${monthName}`} value={brl0(fin.revenue)}
+            hint={fin.goal > 0 ? `${pct(fin.progress)} de ${brl0(fin.goal)}${fin.projection !== null ? ` · projeção ${brl0(fin.projection)}` : ''}` : 'Sem meta definida'}
+            viz={fin.goal > 0
+              ? <MeterBar value={fin.revenue} total={fin.goal} label="Progresso da meta do mês" />
+              : <Button size="sm" variant="brand" onClick={() => navigate('/financeiro')}>Definir meta</Button>}
+          />
+        </div>
 
-          <Card className="lg:col-span-7">
+        {/* ───── Linha 2: faturamento e formas de pagamento ───── */}
+        <div className="grid gap-4 lg:grid-cols-12">
+          <Card raised className="lg:col-span-8">
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <h2 className="text-base font-semibold text-ink">Faturamento</h2>
+              <div>
+                <h2 className="text-base font-semibold text-ink">Faturamento</h2>
+                <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="text-[34px] font-semibold leading-none tracking-tight text-ink lg:text-[42px]">{brl0(month.curT.revenue)}</span>
+                  <Delta value={delta(month.curT.revenue, month.prevT.revenue)} className="text-[13px]" />
+                </div>
+                <p className="mt-2 text-xs text-ink-3">
+                  Em {monthName}, contra {brl0(month.prevT.revenue)} no mesmo período de {prevMonthName}
+                </p>
+              </div>
               <Segmented
                 label="Período do gráfico" value={range} onChange={setRange}
                 options={[{ value: '30d', label: '30 dias' }, { value: '12s', label: '12 semanas' }, { value: '6m', label: '6 meses' }]}
               />
             </div>
-            <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="text-[38px] font-semibold leading-none tracking-tight text-ink lg:text-[48px]">{brl0(month.curT.revenue)}</span>
-              <Delta value={delta(month.curT.revenue, month.prevT.revenue)} className="text-[13px]" />
-            </div>
-            <p className="mt-2 text-xs text-ink-3">
-              Em {monthName}, contra {brl0(month.prevT.revenue)} no mesmo período de {prevMonthName}
-            </p>
             <div className="mt-4">
-              <TrendArea data={trend} name="Faturamento" format={brl} height={196} />
+              <Columns data={trend} name="Faturamento" format={brl} height={232} />
+            </div>
+          </Card>
+
+          <Card className="lg:col-span-4">
+            <CardHead title="Formas de pagamento" subtitle={`Faturamento de ${monthName}`} />
+            <div className="mt-4">
+              <Donut
+                items={payments.map((p) => ({ key: p.key, label: p.label, value: p.revenue }))}
+                format={brl0} centerLabel="Total no mês" centerValue={brl0(month.curT.revenue)}
+              />
             </div>
           </Card>
         </div>
 
-        {/* ───── Linha 2: insight, meta e semana ───── */}
+        {/* ───── Linha 3: insight, reposição e equipe ───── */}
         <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="hero-bg flex min-h-[280px] flex-col justify-between overflow-hidden">
+          <Folder tone="brand" className="min-h-[300px]" bodyClassName="flex min-h-[300px] flex-col justify-between p-5">
             {insight ? (
               <>
                 <div>
@@ -235,7 +245,7 @@ export function Home() {
                       <button
                         key={dir} type="button" aria-label={dir < 0 ? 'Insight anterior' : 'Próximo insight'}
                         onClick={() => setSlide((s) => (s + dir + insights.length) % insights.length)}
-                        className="grid h-10 w-10 place-items-center rounded-full bg-white text-[#17141f] shadow-sm transition hover:scale-105"
+                        className="grid h-10 w-10 place-items-center rounded-full bg-white/80 text-[#17141f] shadow-sm backdrop-blur transition hover:scale-105"
                       >
                         {dir < 0 ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
                       </button>
@@ -250,75 +260,8 @@ export function Home() {
                 <p className="mt-2 text-[13px] leading-relaxed opacity-80">Assim que houver produtos e vendas, a Nova destaca o que merece a sua atenção.</p>
               </div>
             )}
-          </Card>
+          </Folder>
 
-          <Card className="flex flex-col">
-            <CardHead
-              icon={<Target size={18} />} title="Meta do mês" subtitle={`Faturamento de ${monthName}`}
-              right={fin.goal > 0 && (
-                <div className="text-right">
-                  <div className="text-base font-semibold leading-tight text-ink">{brl0(fin.goal)}</div>
-                  <div className="text-xs text-ink-3">Meta</div>
-                </div>
-              )}
-            />
-            {fin.goal > 0 ? (
-              <>
-                <div className="mt-6 flex items-baseline gap-2">
-                  <span className="text-[30px] font-semibold leading-none tracking-tight text-ink">{brl0(fin.revenue)}</span>
-                  <span className="text-xs text-ink-3">{pct(fin.progress)} da meta</span>
-                </div>
-                <PillMeter value={fin.revenue} total={fin.goal} className="mt-4" />
-                <div className="mt-1.5 flex justify-between text-[11px] text-ink-3">
-                  <span>0</span>
-                  <span>{fin.projection !== null && `Projeção: ${brl0(fin.projection)}`}</span>
-                </div>
-                <div className="mt-auto grid grid-cols-3 gap-3 pt-5">
-                  {[
-                    { label: 'Lucro bruto', value: brl0(fin.gross) },
-                    { label: 'Despesas', value: brl0(fin.expenses) },
-                    { label: 'Margem', value: pct(fin.margin) },
-                  ].map((s) => (
-                    <div key={s.label} className="min-w-0">
-                      <div className="truncate text-sm font-semibold text-ink">{s.value}</div>
-                      <div className="text-xs text-ink-3">{s.label}</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <div className="mt-6 flex flex-1 flex-col items-start justify-center">
-                <p className="text-[13px] text-ink-2">Defina quanto você quer faturar neste mês para acompanhar o ritmo dia a dia.</p>
-                <Button className="mt-4" size="sm" variant="brand" onClick={() => navigate('/financeiro')}>Definir meta</Button>
-              </div>
-            )}
-          </Card>
-
-          <Card className="flex flex-col">
-            <CardHead
-              icon={<CalendarDays size={18} />} title="Semana atual" subtitle="Comparada à semana passada"
-              right={
-                <div className="text-right">
-                  <div className="text-base font-semibold leading-tight text-ink">{week.cur.label}</div>
-                  <div className="text-xs text-ink-3">Seg a dom</div>
-                </div>
-              }
-            />
-            <div className="mt-5">
-              <CompareLines data={weekLines} currentName="Esta semana" previousName="Semana passada" format={brl} height={118} showAxis={false} />
-            </div>
-            <div className="mt-auto flex items-end justify-between gap-3 pt-4">
-              <span className="text-[30px] font-semibold leading-none tracking-tight text-ink">{brl0(week.curT.revenue)}</span>
-              <div className="text-right">
-                <div className="text-xs text-ink-3">no mesmo trecho</div>
-                <Delta value={delta(week.curT.revenue, week.prevT.revenue)} />
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        {/* ───── Linha 3: reposição, mais vendidos e equipe ───── */}
-        <div className="grid gap-4 lg:grid-cols-3">
           <Card>
             <CardHead title="Reposição" subtitle={alerts.length ? `${plural(alerts.length, 'aviso', 'avisos')} em aberto` : 'Tudo em dia'} right={<SeeAll to="/avisos" />} />
             {alerts.length === 0 ? (
@@ -337,16 +280,6 @@ export function Home() {
                 ))}
               </ul>
             )}
-          </Card>
-
-          <Card>
-            <CardHead title="Mais vendidos" subtitle={`Peças vendidas em ${monthName}`} right={<SeeAll to="/relatorios" />} />
-            <div className="mt-4">
-              <BarList
-                items={topProducts.map((p) => ({ key: p.id, label: p.name, value: p.qty }))}
-                format={(n) => `${num(n)} un.`} empty="Ainda não há vendas neste mês."
-              />
-            </div>
           </Card>
 
           <Card>
