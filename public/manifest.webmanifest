@@ -1,0 +1,14 @@
+{
+  "name": "ALLNOVA",
+  "short_name": "ALLNOVA",
+  "description": "Gestão completa para lojas de moda",
+  "lang": "pt-BR",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f3f2f8",
+  "theme_color": "#2b1657",
+  "icons": [
+    { "src": "/logo-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
